@@ -1,0 +1,217 @@
+// Prisma Database Schema for Dudh Wala (Milk Delivery Management System)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model - complete authentication system
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  password      String   // Hashed password
+  name          String?
+  phone         String?
+  isActive      Boolean  @default(true) @map("is_active")
+  isVerified    Boolean  @default(false) @map("is_verified")
+  emailVerificationToken String? @map("email_verification_token")
+  passwordResetToken     String? @map("password_reset_token")
+  passwordResetExpires   DateTime? @map("password_reset_expires")
+  lastLoginAt   DateTime? @map("last_login_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  
+  // User preferences
+  preferences   Json?    @default("{}")
+  timezone      String   @default("Asia/Kolkata")
+  
+  // Relationships
+  customers     Customer[]
+  dailyEntries  DailyEntry[]
+  payments      Payment[]
+  activityLogs  ActivityLog[]
+  securityPins  SecurityPin[]
+  refreshTokens RefreshToken[]
+  
+  @@map("users")
+}
+
+// Refresh Token model for JWT management
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  isRevoked Boolean  @default(false) @map("is_revoked")
+  
+  // Relationships
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("refresh_tokens")
+}
+
+// Customer model
+model Customer {
+  id               String   @id @default(cuid())
+  userId           String   @map("user_id")
+  name             String
+  phone            String
+  address          String
+  defaultQuantity  Decimal  @default(1.00) @map("default_quantity") @db.Decimal(10,2)
+  defaultPrice     Decimal  @default(80.00) @map("default_price") @db.Decimal(10,2)
+  deliveryDays     Int[]    @map("delivery_days") // Array of weekday indices (0=Sunday, 1=Monday, etc.)
+  isActive         Boolean  @default(true) @map("is_active")
+  notes            String?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  
+  // Relationships
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dailyEntries     DailyEntry[]
+  payments         Payment[]
+  
+  @@unique([userId, phone])
+  @@index([userId, isActive])
+  @@map("customers")
+}
+
+// Daily Entry model for milk deliveries
+model DailyEntry {
+  id             String   @id @default(cuid())
+  userId         String   @map("user_id")
+  customerId     String   @map("customer_id")
+  entryDate      DateTime @map("entry_date") @db.Date
+  quantity       Decimal  @db.Decimal(10,2)
+  productType    String   @default("milk") @map("product_type")
+  pricePerLiter  Decimal  @map("price_per_liter") @db.Decimal(10,2)
+  amount         Decimal  @db.Decimal(10,2) // Calculated: quantity * pricePerLiter
+  notes          String?
+  isEdited       Boolean  @default(false) @map("is_edited")
+  editedAt       DateTime? @map("edited_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  
+  // Relationships
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customer       Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, customerId, entryDate])
+  @@index([userId, entryDate])
+  @@index([customerId, entryDate])
+  @@map("daily_entries")
+}
+
+// Payment model
+model Payment {
+  id           String        @id @default(cuid())
+  userId       String        @map("user_id")
+  customerId   String        @map("customer_id")
+  amount       Decimal       @db.Decimal(10,2)
+  method       PaymentMethod
+  reference    String?
+  paymentDate  DateTime      @map("payment_date") @db.Date
+  notes        String?
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  
+  // Relationships
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customer     Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, paymentDate])
+  @@index([customerId, paymentDate])
+  @@map("payments")
+}
+
+// Activity Log model for audit trail
+model ActivityLog {
+  id          String           @id @default(cuid())
+  userId      String           @map("user_id")
+  action      ActivityAction
+  entityType  ActivityEntity   @map("entity_type")
+  entityId    String?          @map("entity_id")
+  entityName  String?          @map("entity_name")
+  description String
+  metadata    Json?            @default("{}")
+  ipAddress   String?          @map("ip_address")
+  userAgent   String?          @map("user_agent")
+  timestamp   DateTime         @default(now())
+  
+  // Relationships
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, timestamp])
+  @@index([action, timestamp])
+  @@map("activity_logs")
+}
+
+// Security PIN model
+model SecurityPin {
+  id          String   @id @default(cuid())
+  userId      String   @unique @map("user_id")
+  pinHash     String   @map("pin_hash")
+  attempts    Int      @default(0)
+  lastAttempt DateTime? @map("last_attempt")
+  lockedUntil DateTime? @map("locked_until")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  // Relationships
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("security_pins")
+}
+
+// Enums
+enum PaymentMethod {
+  CASH
+  MOBILE
+  BANK
+  
+  @@map("payment_method")
+}
+
+enum ActivityAction {
+  CUSTOMER_ADDED
+  CUSTOMER_UPDATED
+  CUSTOMER_DELETED
+  CUSTOMER_ACTIVATED
+  CUSTOMER_DEACTIVATED
+  DAILY_ENTRY_ADDED
+  DAILY_ENTRY_UPDATED
+  DAILY_ENTRY_DELETED
+  PAYMENT_ADDED
+  PAYMENT_DELETED
+  DATA_EXPORTED
+  DATA_CLEARED
+  APP_OPENED
+  REPORT_VIEWED
+  HISTORY_VIEWED
+  DATA_SYNCED
+  SYNC_ERROR
+  CONNECTION_STATUS_CHANGED
+  SECURITY_PIN_CREATED
+  SECURITY_PIN_CHANGED
+  SECURITY_PIN_VERIFIED
+  AUTH_SUCCESS
+  AUTH_FAILURE
+  
+  @@map("activity_action")
+}
+
+enum ActivityEntity {
+  CUSTOMER
+  DAILY_ENTRY
+  PAYMENT
+  SYSTEM
+  VIEW
+  SECURITY
+  AUTH
+  
+  @@map("activity_entity")
+}

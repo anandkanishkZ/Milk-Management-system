@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "Milk Delivery Manager",
+    "slug": "milk-delivery-manager",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "milkdelivery",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.dhudhwala.milkdelivery",
+      "versionCode": 1,
+      "compileSdkVersion": 34,
+      "targetSdkVersion": 34,
+      "buildToolsVersion": "34.0.0",
+      "permissions": []
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dhudhwala.milkdelivery"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b8482488-eac1-40c7-9313-8ea2fbb92a15"
+      },
+      "apiBaseUrl": "https://your-production-api.com",
+      "apiVersion": "/api/v1",
+      "apiTimeout": 15000,
+      "environment": "production",
+      "enableLogging": false
+    }
+  }
+}
