@@ -7,6 +7,8 @@ import {
   TextInput,
   RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { useState, useMemo } from 'react';
 import { useData } from '@/context/DataContext';
 import { ActivityLog } from '@/types';
@@ -48,7 +50,7 @@ export default function ActivityLogsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [limit, setLimit] = useState(50);
 
-  const activityStats = useMemo(() => getActivityStats(), [getActivityLogs]);
+  const activityStats = useMemo(() => getActivityStats(), [getActivityStats]);
   
   const filteredLogs = useMemo(() => {
     const logs = getActivityLogs(limit, searchQuery);
@@ -173,7 +175,8 @@ export default function ActivityLogsScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <StatusBar style="light" backgroundColor="#2563eb" />
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <Activity size={24} color="#fff" />
@@ -298,7 +301,7 @@ export default function ActivityLogsScreen() {
           </ScrollView>
         </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -306,6 +309,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8fafc',
+    paddingBottom: 75, // Account for tab bar height
   },
   header: {
     backgroundColor: '#2563eb',

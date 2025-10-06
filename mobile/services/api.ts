@@ -345,6 +345,21 @@ class ApiService {
     };
   }
 
+  async createActivityLog(activityData: {
+    action: string;
+    entityType: string;
+    entityId?: string;
+    entityName?: string;
+    description?: string;
+    metadata?: any;
+  }): Promise<ActivityLog> {
+    const response = await this.request<ActivityLog>('/activity-logs', {
+      method: 'POST',
+      body: JSON.stringify(activityData),
+    });
+    return response.data!;
+  }
+
   // Reports API
   async getDashboardReport(params?: {
     from?: string;

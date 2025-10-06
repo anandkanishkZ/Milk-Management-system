@@ -8,6 +8,8 @@ import {
   Modal,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { useData } from '@/context/DataContext';
 import { Customer } from '@/types';
@@ -210,7 +212,8 @@ export default function CustomersScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <StatusBar style="light" backgroundColor="#2563eb" />
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Customers</Text>
         <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
@@ -378,7 +381,7 @@ export default function CustomersScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -386,6 +389,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f9fafb',
+    paddingBottom: 75, // Account for tab bar height
   },
   header: {
     backgroundColor: '#2563eb',

@@ -1,4 +1,6 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { useMemo } from 'react';
 import { useRouter } from 'expo-router';
 import { useData } from '@/context/DataContext';
@@ -50,7 +52,8 @@ export default function HomeScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <StatusBar style="light" backgroundColor="#2563eb" />
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Milk Delivery Manager</Text>
         <Text style={styles.headerSubtitle}>Dashboard</Text>
@@ -136,7 +139,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -144,6 +147,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f9fafb',
+    paddingBottom: 75, // Account for tab bar height
   },
   loadingContainer: {
     flex: 1,

@@ -1,7 +1,11 @@
 import { Tabs } from 'expo-router';
+import { Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { House as Home, Users, Calendar, Wallet, ChartBar as BarChart3, History, User } from 'lucide-react-native';
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+  
   return (
     <Tabs
       screenOptions={{
@@ -11,9 +15,16 @@ export default function TabLayout() {
         tabBarStyle: {
           borderTopWidth: 1,
           borderTopColor: '#e5e7eb',
-          paddingBottom: 5,
+          paddingBottom: Math.max(insets.bottom, 5),
           paddingTop: 5,
-          height: 60,
+          height: 60 + Math.max(insets.bottom - 5, 0),
+          backgroundColor: '#ffffff',
+          position: 'absolute',
+          elevation: Platform.OS === 'android' ? 8 : 0,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
         },
       }}
     >

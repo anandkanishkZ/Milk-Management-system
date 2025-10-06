@@ -9,6 +9,8 @@ import {
   Modal,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { useState, useEffect } from 'react';
 import { useData } from '@/context/DataContext';
 import { Customer, Payment } from '@/types';
@@ -181,7 +183,8 @@ export default function PaymentsScreen() {
   const todayTotal = todayPayments.reduce((sum, p) => sum + p.amount, 0);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <StatusBar style="light" backgroundColor="#2563eb" />
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Payments</Text>
       </View>
@@ -358,7 +361,7 @@ export default function PaymentsScreen() {
                 <View style={styles.historySection}>
                   <Text style={styles.historySectionTitle}>Recent Payments</Text>
                   {getCustomerPayments(selectedCustomer.id).map((payment) => (
-                    <View style={styles.historyItem} {...{ key: payment.id }}>
+                    <View key={payment.id} style={styles.historyItem}>
                       <View style={styles.historyItemLeft}>
                         <Text style={styles.historyDate}>
                           {formatDisplayDate(payment.paymentDate)}
@@ -413,7 +416,7 @@ export default function PaymentsScreen() {
         mode={pinAction === 'setup' ? 'setup' : 'verify'}
       />
 
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -427,6 +430,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f9fafb',
+    paddingBottom: 75, // Account for tab bar height
   },
   header: {
     backgroundColor: '#2563eb',

@@ -8,6 +8,8 @@ import {
   Alert,
   Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useData } from '@/context/DataContext';
@@ -426,7 +428,8 @@ export default function ProfileScreen() {
   ];
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <StatusBar style="light" backgroundColor="#2563eb" />
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.profileIcon}>
@@ -465,7 +468,7 @@ export default function ProfileScreen() {
         </View>
 
         {menuSections.map((section, sectionIndex) => (
-          <View style={styles.section} {...{ key: sectionIndex }}>
+          <View key={sectionIndex} style={styles.section}>
             <Text style={styles.sectionTitle}>{section.title}</Text>
             {section.items.map((item, itemIndex) => (
               <TouchableOpacity
@@ -525,13 +528,14 @@ export default function ProfileScreen() {
         }
         mode={pinAction === 'setup' ? 'setup' : 'change'}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingBottom: 75, // Account for tab bar height
     backgroundColor: '#f8fafc',
   },
   header: {

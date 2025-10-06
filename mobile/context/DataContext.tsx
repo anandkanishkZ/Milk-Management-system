@@ -105,6 +105,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      try {
+        const activityLogsResponse = await apiService.getActivityLogs({ page: 1, limit: 1000 });
+        if (activityLogsResponse.logs) {
+          setActivityLogs(activityLogsResponse.logs);
+          log(`📊 Loaded ${activityLogsResponse.logs.length} activity logs`);
+        } else {
+          setActivityLogs([]);
+        }
+      } catch (error) {
+        const isSessionExpired = await handleAuthError(error);
+        if (!isSessionExpired) {
+          logError('Failed to load activity logs:', error);
+        }
+      }
+
       log('✅ Data loaded successfully');
     } catch (error) {
       logError('❌ Failed to load data:', error);
@@ -322,37 +337,60 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const getActivityStats = () => {
-    const today = new Date().toISOString().split('T')[0];
-    const thisWeek = new Date();
-    thisWeek.setDate(thisWeek.getDate() - 7);
-    const weekStart = thisWeek.toISOString().split('T')[0];
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
     
+    // Calculate date ranges
+    const weekAgo = new Date(now);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const weekStart = weekAgo.toISOString();
+    
+    const monthAgo = new Date(now);
+    monthAgo.setMonth(monthAgo.getMonth() - 1);
+    const monthStart = monthAgo.toISOString();
+    
+    // Filter logs by date ranges
     const todayLogs = activityLogs.filter(log => log.timestamp.startsWith(today));
     const weekLogs = activityLogs.filter(log => log.timestamp >= weekStart);
+    const monthLogs = activityLogs.filter(log => log.timestamp >= monthStart);
+    
+    // Calculate activity by type
+    const activityByType: Record<string, number> = {};
+    activityLogs.forEach(log => {
+      const type = log.entityType || 'unknown';
+      activityByType[type] = (activityByType[type] || 0) + 1;
+    });
     
     return {
       totalActivities: activityLogs.length,
       todayActivities: todayLogs.length,
       weekActivities: weekLogs.length,
-      monthActivities: activityLogs.length, // Simplified
+      monthActivities: monthLogs.length,
       mostActiveDay: today,
-      activityByType: {},
+      activityByType,
       recentActivities: activityLogs.slice(0, 10)
     };
   };
 
   const logActivity = async (activity: Omit<ActivityLog, 'id' | 'timestamp'>) => {
     try {
-      // For now, just add to local state - backend endpoint can be added later
-      const newLog: ActivityLog = {
+      // Send to backend API
+      const newLog = await apiService.createActivityLog(activity);
+      
+      // Add to local state immediately for responsive UI
+      setActivityLogs(prev => [newLog, ...prev].slice(0, 1000));
+      
+      log(`📝 Activity logged: ${activity.action}`);
+    } catch (error) {
+      logError('Failed to log activity:', error);
+      
+      // Fallback: add to local state only if API fails
+      const fallbackLog: ActivityLog = {
         id: Date.now().toString(),
         timestamp: new Date().toISOString(),
         ...activity
       };
-      
-      setActivityLogs(prev => [newLog, ...prev].slice(0, 1000));
-    } catch (error) {
-      logError('Failed to log activity:', error);
+      setActivityLogs(prev => [fallbackLog, ...prev].slice(0, 1000));
     }
   };
 

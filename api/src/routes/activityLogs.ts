@@ -57,12 +57,41 @@ router.get('/', async (req, res) => {
       prisma.activityLog.count({ where })
     ]);
 
+    // Convert database enum values back to frontend format
+    const actionReverseMap: Record<string, string> = {
+      'CUSTOMER_ADDED': 'customer_added',
+      'CUSTOMER_UPDATED': 'customer_updated',
+      'CUSTOMER_DELETED': 'customer_deleted',
+      'CUSTOMER_ACTIVATED': 'customer_activated',
+      'CUSTOMER_DEACTIVATED': 'customer_deactivated',
+      'DAILY_ENTRY_ADDED': 'daily_entry_added',
+      'DAILY_ENTRY_UPDATED': 'daily_entry_updated',
+      'PAYMENT_ADDED': 'payment_added',
+      'PAYMENT_DELETED': 'payment_deleted',
+      'DATA_EXPORTED': 'data_exported',
+      'DATA_CLEARED': 'data_cleared',
+      'APP_OPENED': 'app_opened',
+      'REPORT_VIEWED': 'report_viewed',
+      'HISTORY_VIEWED': 'history_viewed',
+      'DATA_SYNCED': 'data_synced'
+    };
+
+    const entityReverseMap: Record<string, string> = {
+      'CUSTOMER': 'customer',
+      'DAILY_ENTRY': 'daily_entry',
+      'PAYMENT': 'payment',
+      'SYSTEM': 'system',
+      'VIEW': 'view',
+      'SECURITY': 'security',
+      'AUTH': 'auth'
+    };
+
     const response: ApiResponse<any[]> = {
       success: true,
       data: activityLogs.map(log => ({
         id: log.id,
-        action: log.action,
-        entityType: log.entityType,
+        action: actionReverseMap[log.action] || log.action.toLowerCase(),
+        entityType: entityReverseMap[log.entityType] || log.entityType.toLowerCase(),
         entityId: log.entityId,
         entityName: log.entityName,
         description: log.description,
@@ -165,6 +194,127 @@ router.get('/stats', async (req, res) => {
     };
     
     res.json(response);
+  } catch (error) {
+    throw error;
+  }
+});
+
+// POST /api/v1/activity-logs - Create a new activity log
+router.post('/', async (req, res) => {
+  try {
+    const { action, entityType, entityId, entityName, description, metadata } = req.body;
+
+    // Validate required fields
+    if (!action || !entityType) {
+      const response: ApiResponse<null> = {
+        success: false,
+        message: 'Missing required fields: action and entityType are required',
+        error: 'VALIDATION_ERROR'
+      };
+      return res.status(400).json(response);
+    }
+
+    // Convert frontend values to database enum values
+    const actionMap: Record<string, string> = {
+      'customer_added': 'CUSTOMER_ADDED',
+      'customer_updated': 'CUSTOMER_UPDATED',
+      'customer_deleted': 'CUSTOMER_DELETED',
+      'customer_activated': 'CUSTOMER_ACTIVATED',
+      'customer_deactivated': 'CUSTOMER_DEACTIVATED',
+      'daily_entry_added': 'DAILY_ENTRY_ADDED',
+      'daily_entry_updated': 'DAILY_ENTRY_UPDATED',
+      'payment_added': 'PAYMENT_ADDED',
+      'payment_deleted': 'PAYMENT_DELETED',
+      'data_exported': 'DATA_EXPORTED',
+      'data_cleared': 'DATA_CLEARED',
+      'app_opened': 'APP_OPENED',
+      'report_viewed': 'REPORT_VIEWED',
+      'history_viewed': 'HISTORY_VIEWED',
+      'data_synced': 'DATA_SYNCED'
+    };
+
+    const entityTypeMap: Record<string, string> = {
+      'customer': 'CUSTOMER',
+      'daily_entry': 'DAILY_ENTRY',
+      'payment': 'PAYMENT',
+      'system': 'SYSTEM',
+      'view': 'VIEW',
+      'security': 'SECURITY',
+      'auth': 'AUTH'
+    };
+
+    const dbAction = actionMap[action] || action.toUpperCase();
+    const dbEntityType = entityTypeMap[entityType] || entityType.toUpperCase();
+
+    // Create the activity log
+    const activityLog = await prisma.activityLog.create({
+      data: {
+        userId: req.user!.id,
+        action: dbAction as any,
+        entityType: dbEntityType as any,
+        entityId: entityId || null,
+        entityName: entityName || null,
+        description: description || null,
+        metadata: metadata || null,
+        ipAddress: req.ip || null,
+        userAgent: req.get('User-Agent') || null,
+        timestamp: new Date()
+      },
+      select: {
+        id: true,
+        action: true,
+        entityType: true,
+        entityId: true,
+        entityName: true,
+        description: true,
+        metadata: true,
+        timestamp: true,
+        ipAddress: true,
+        userAgent: true
+      }
+    });
+
+    // Convert back to frontend format
+    const actionReverseMap: Record<string, string> = {
+      'CUSTOMER_ADDED': 'customer_added',
+      'CUSTOMER_UPDATED': 'customer_updated',
+      'CUSTOMER_DELETED': 'customer_deleted',
+      'CUSTOMER_ACTIVATED': 'customer_activated',
+      'CUSTOMER_DEACTIVATED': 'customer_deactivated',
+      'DAILY_ENTRY_ADDED': 'daily_entry_added',
+      'DAILY_ENTRY_UPDATED': 'daily_entry_updated',
+      'PAYMENT_ADDED': 'payment_added',
+      'PAYMENT_DELETED': 'payment_deleted',
+      'DATA_EXPORTED': 'data_exported',
+      'DATA_CLEARED': 'data_cleared',
+      'APP_OPENED': 'app_opened',
+      'REPORT_VIEWED': 'report_viewed',
+      'HISTORY_VIEWED': 'history_viewed',
+      'DATA_SYNCED': 'data_synced'
+    };
+
+    const entityReverseMap: Record<string, string> = {
+      'CUSTOMER': 'customer',
+      'DAILY_ENTRY': 'daily_entry',
+      'PAYMENT': 'payment',
+      'SYSTEM': 'system',
+      'VIEW': 'view',
+      'SECURITY': 'security',
+      'AUTH': 'auth'
+    };
+
+    const response: ApiResponse<any> = {
+      success: true,
+      data: {
+        ...activityLog,
+        action: actionReverseMap[activityLog.action] || activityLog.action.toLowerCase(),
+        entityType: entityReverseMap[activityLog.entityType] || activityLog.entityType.toLowerCase(),
+        timestamp: activityLog.timestamp.toISOString()
+      },
+      message: 'Activity log created successfully'
+    };
+
+    return res.status(201).json(response);
   } catch (error) {
     throw error;
   }

@@ -10,6 +10,9 @@ import {
   Alert,
   Modal,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import { useFocusEffect } from '@react-navigation/native';
 import { useState, useMemo, useEffect } from 'react';
 import { useData } from '@/context/DataContext';
 import { getTodayString, formatDisplayDate, getWeekDayIndex, isDateInFuture, isDateToday } from '@/utils/date';
@@ -34,6 +37,13 @@ export default function DailyScreen() {
   useEffect(() => {
     checkPinSetup();
   }, []);
+
+  // Set status bar style when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      // This will be handled by the StatusBar component in the return
+    }, [])
+  );
 
   const checkPinSetup = async () => {
     try {
@@ -303,7 +313,8 @@ export default function DailyScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <StatusBar style="light" backgroundColor="#2563eb" />
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Daily Entries</Text>
       </View>
@@ -387,7 +398,7 @@ export default function DailyScreen() {
             const isSaving = saving === customer.id;
 
             return (
-              <View style={styles.deliveryCard} {...{ key: customer.id }}>
+              <View key={customer.id} style={styles.deliveryCard}>
                 <View style={styles.deliveryHeader}>
                   <View style={styles.deliveryInfo}>
                     <Text style={styles.customerName}>{customer.name}</Text>
@@ -552,7 +563,7 @@ export default function DailyScreen() {
         }
         mode={pinAction === 'setup' ? 'setup' : 'verify'}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -560,6 +571,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f9fafb',
+    paddingBottom: 65, // Increased padding for better content accessibility
   },
   loadingContainer: {
     flex: 1,
