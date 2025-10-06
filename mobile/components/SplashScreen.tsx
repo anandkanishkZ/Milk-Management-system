@@ -1,12 +1,19 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Animated, Dimensions, AppState } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { useAuth } from '../context/AuthContext';
 
 const { width, height } = Dimensions.get('window');
 
-export default function SplashScreen() {
+interface SplashScreenProps {
+  onComplete?: () => void;
+}
+
+export default function SplashScreen({ onComplete }: SplashScreenProps) {
   const router = useRouter();
+  const { user, loading } = useAuth();
+  const [animationComplete, setAnimationComplete] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.3)).current;
   const bounceAnim = useRef(new Animated.Value(0)).current;
@@ -14,42 +21,31 @@ export default function SplashScreen() {
   const slideAnim = useRef(new Animated.Value(-50)).current;
 
   useEffect(() => {
+    console.log('🎬 Starting splash screen animations...');
+    
     // Start animations sequence
     const animations = Animated.sequence([
       // Fade in background
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 800,
+        duration: 600,
         useNativeDriver: true,
       }),
       // Scale up logo
       Animated.spring(scaleAnim, {
         toValue: 1,
-        tension: 50,
-        friction: 3,
+        tension: 80,
+        friction: 4,
         useNativeDriver: true,
       }),
       // Slide in text
       Animated.timing(slideAnim, {
         toValue: 0,
-        duration: 600,
+        duration: 400,
         useNativeDriver: true,
       }),
-      // Start milk drop animation
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(bounceAnim, {
-            toValue: 1,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(bounceAnim, {
-            toValue: 0,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-        ])
-      ),
+      // Brief pause
+      Animated.delay(800),
     ]);
 
     // Rotation animation for milk drops
@@ -61,14 +57,57 @@ export default function SplashScreen() {
       })
     );
 
-    animations.start();
+    // Start bounce animation
+    const bounceAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(bounceAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(bounceAnim, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    // Start all animations
+    animations.start((finished) => {
+      if (finished) {
+        console.log('✅ Splash animations completed');
+        setAnimationComplete(true);
+      }
+    });
+    
     rotationAnimation.start();
+    bounceAnimation.start();
 
     return () => {
       animations.stop();
       rotationAnimation.stop();
+      bounceAnimation.stop();
     };
   }, []);
+
+  // Handle navigation after animation completes
+  useEffect(() => {
+    if (animationComplete) {
+      console.log('🚀 Splash animations completed, calling onComplete...');
+      
+      const timer = setTimeout(() => {
+        if (onComplete) {
+          console.log('📱 Calling onComplete callback');
+          onComplete();
+        }
+      }, 300); // Small delay for smooth transition
+
+      return () => clearTimeout(timer);
+    }
+  }, [animationComplete, onComplete]);
+
+  // Removed failsafe - AuthGuard will handle navigation properly
 
   const rotate = rotateAnim.interpolate({
     inputRange: [0, 1],

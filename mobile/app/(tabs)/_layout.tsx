@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { House as Home, Users, Calendar, Wallet, ChartBar as BarChart3, History, User } from 'lucide-react-native';
 
 export default function TabLayout() {
+  console.log('📱 TabLayout rendering...');
   const insets = useSafeAreaInsets();
   
   return (

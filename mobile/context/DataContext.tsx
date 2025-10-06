@@ -77,6 +77,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const loadData = async () => {
     try {
+      console.log('📦 DataContext: Starting to load data...');
       setLoading(true);
       log('🔄 Loading data from API...');
 

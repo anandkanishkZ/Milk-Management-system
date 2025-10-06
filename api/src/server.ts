@@ -163,10 +163,11 @@ const startServer = async () => {
     await prisma.$connect();
     console.log('🗄️ Database connected successfully');
     
-    httpServer.listen(config.port, () => {
+    httpServer.listen(config.port, '0.0.0.0', () => {
       console.log(`🚀 Server running on port ${config.port}`);
       console.log(`🌍 Environment: ${config.nodeEnv}`);
       console.log(`📡 API available at: http://localhost:${config.port}${config.apiPrefix}`);
+      console.log(`📱 Mobile API available at: http://192.168.1.119:${config.port}${config.apiPrefix}`);
       console.log(`🔌 Socket.io server ready`);
     });
   } catch (error) {

@@ -132,7 +132,7 @@ export class AuthService {
       data: {
         token: refreshToken,
         userId: user.id,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 days (3 months)
       }
     });
 
@@ -198,7 +198,7 @@ export class AuthService {
       data: {
         token: refreshToken,
         userId: user.id,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 days (3 months)
       }
     });
 
@@ -259,7 +259,7 @@ export class AuthService {
         data: {
           token: newRefreshToken,
           userId,
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 days (3 months)
         }
       });
 

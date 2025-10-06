@@ -241,6 +241,105 @@ router.post('/', async (req, res) => {
   }
 });
 
+// GET /api/v1/customers/:id/can-delete - Check if customer can be deleted
+router.get('/:id/can-delete', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Check if customer exists and belongs to user
+    const existingCustomer = await prisma.customer.findFirst({
+      where: {
+        id,
+        userId: req.user!.id
+      },
+      include: {
+        _count: {
+          select: {
+            dailyEntries: true,
+            payments: true
+          }
+        }
+      }
+    });
+    
+    if (!existingCustomer) {
+      const response: ApiResponse = {
+        success: false,
+        message: 'Customer not found',
+        error: 'The requested customer does not exist or you do not have permission to access it'
+      };
+      res.status(404).json(response);
+      return;
+    }
+
+    // Calculate customer balance
+    const entriesSum = await prisma.dailyEntry.aggregate({
+      where: {
+        customerId: id,
+        userId: req.user!.id
+      },
+      _sum: {
+        amount: true
+      }
+    });
+
+    const paymentsSum = await prisma.payment.aggregate({
+      where: {
+        customerId: id,
+        userId: req.user!.id
+      },
+      _sum: {
+        amount: true
+      }
+    });
+
+    const totalBilled = Number(entriesSum._sum.amount || 0);
+    const totalPaid = Number(paymentsSum._sum.amount || 0);
+    const balance = totalBilled - totalPaid;
+
+    // Check dependencies
+    const hasEntries = existingCustomer._count.dailyEntries > 0;
+    const hasPayments = existingCustomer._count.payments > 0;
+    const hasPendingBalance = Math.abs(balance) > 0.01;
+    const canDelete = !hasEntries && !hasPayments && !hasPendingBalance;
+
+    const dependencies = [];
+    if (hasEntries) dependencies.push(`${existingCustomer._count.dailyEntries} delivery entries`);
+    if (hasPayments) dependencies.push(`${existingCustomer._count.payments} payment records`);
+    if (hasPendingBalance) {
+      const balanceText = balance > 0 ? `₹${balance.toFixed(2)} pending payment` : `₹${Math.abs(balance).toFixed(2)} advance balance`;
+      dependencies.push(balanceText);
+    }
+
+    const response: ApiResponse<any> = {
+      success: true,
+      data: {
+        canDelete,
+        customer: {
+          id: existingCustomer.id,
+          name: existingCustomer.name,
+          phone: existingCustomer.phone
+        },
+        dependencies: {
+          entries: existingCustomer._count.dailyEntries,
+          payments: existingCustomer._count.payments,
+          pendingBalance: balance,
+          hasAdvance: balance < 0,
+          list: dependencies
+        },
+        message: canDelete 
+          ? 'Customer can be safely deleted' 
+          : `Cannot delete: ${dependencies.join(', ')}`
+      },
+      message: 'Delete validation completed'
+    };
+    
+    res.json(response);
+  } catch (error) {
+    throw error;
+  }
+});
+
 // PUT /api/v1/customers/:id - Update customer
 router.put('/:id', async (req, res) => {
   try {
@@ -358,7 +457,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/v1/customers/:id - Delete customer (soft delete)
+// DELETE /api/v1/customers/:id - Delete customer (soft delete - deactivate)
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -388,15 +487,82 @@ router.delete('/:id', async (req, res) => {
       res.status(404).json(response);
       return;
     }
+
+    // Calculate customer balance to check for pending payments
+    const entriesSum = await prisma.dailyEntry.aggregate({
+      where: {
+        customerId: id,
+        userId: req.user!.id
+      },
+      _sum: {
+        amount: true
+      }
+    });
+
+    const paymentsSum = await prisma.payment.aggregate({
+      where: {
+        customerId: id,
+        userId: req.user!.id
+      },
+      _sum: {
+        amount: true
+      }
+    });
+
+    const totalBilled = Number(entriesSum._sum.amount || 0);
+    const totalPaid = Number(paymentsSum._sum.amount || 0);
+    const balance = totalBilled - totalPaid;
+
+    // Check if customer has any dependencies that prevent soft deletion
+    const hasEntries = existingCustomer._count.dailyEntries > 0;
+    const hasPayments = existingCustomer._count.payments > 0;
+    const hasPendingBalance = Math.abs(balance) > 0.01; // Allow small rounding differences
+
+    if (hasEntries || hasPayments || hasPendingBalance) {
+      const dependencies = [];
+      if (hasEntries) dependencies.push(`${existingCustomer._count.dailyEntries} delivery entries`);
+      if (hasPayments) dependencies.push(`${existingCustomer._count.payments} payment records`);
+      if (hasPendingBalance) {
+        const balanceText = balance > 0 ? `₹${balance.toFixed(2)} pending payment` : `₹${Math.abs(balance).toFixed(2)} advance balance`;
+        dependencies.push(balanceText);
+      }
+
+      const response: ApiResponse = {
+        success: false,
+        message: 'Cannot deactivate customer',
+        error: `Customer has ${dependencies.join(', ')}. Please settle all payments and clear history before deactivating.`,
+        data: {
+          canDelete: false,
+          dependencies: {
+            entries: existingCustomer._count.dailyEntries,
+            payments: existingCustomer._count.payments,
+            pendingBalance: balance,
+            hasAdvance: balance < 0,
+            list: dependencies
+          }
+        }
+      };
+      res.status(400).json(response);
+      return;
+    }
     
-    // Soft delete (deactivate) instead of hard delete to preserve data integrity
-    const deletedCustomer = await prisma.customer.update({
+    // Proceed with soft delete (deactivate)
+    const updatedCustomer = await prisma.customer.update({
       where: { id },
       data: { isActive: false },
       select: {
         id: true,
+        userId: true,
         name: true,
-        phone: true
+        phone: true,
+        address: true,
+        defaultQuantity: true,
+        defaultPrice: true,
+        deliveryDays: true,
+        isActive: true,
+        notes: true,
+        createdAt: true,
+        updatedAt: true
       }
     });
     
@@ -404,27 +570,181 @@ router.delete('/:id', async (req, res) => {
     await prisma.activityLog.create({
       data: {
         userId: req.user!.id,
-        action: 'CUSTOMER_DELETED',
+        action: 'CUSTOMER_DEACTIVATED',
         entityType: 'CUSTOMER',
-        entityId: deletedCustomer.id,
-        entityName: deletedCustomer.name,
-        description: `Deleted customer: ${deletedCustomer.name}`,
+        entityId: updatedCustomer.id,
+        entityName: updatedCustomer.name,
+        description: `Deactivated customer: ${updatedCustomer.name}`,
         metadata: {
-          phone: deletedCustomer.phone,
+          phone: updatedCustomer.phone,
           entriesCount: existingCustomer._count.dailyEntries,
-          paymentsCount: existingCustomer._count.payments
+          paymentsCount: existingCustomer._count.payments,
+          finalBalance: balance
         },
         ipAddress: req.ip || null,
         userAgent: req.get('User-Agent') || null
       }
     });
     
+    const response: ApiResponse<Customer> = {
+      success: true,
+      message: 'Customer deactivated successfully',
+      data: {
+        ...updatedCustomer,
+        defaultQuantity: Number(updatedCustomer.defaultQuantity),
+        defaultPrice: Number(updatedCustomer.defaultPrice),
+        notes: updatedCustomer.notes || '',
+        createdAt: updatedCustomer.createdAt.toISOString(),
+        updatedAt: updatedCustomer.updatedAt.toISOString()
+      }
+    };
+    
+    res.json(response);
+  } catch (error) {
+    throw error;
+  }
+});
+
+// DELETE /api/v1/customers/:id/permanent - Permanently delete customer (hard delete)
+router.delete('/:id/permanent', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { confirm } = req.query; // Require explicit confirmation
+    
+    if (confirm !== 'true') {
+      const response: ApiResponse = {
+        success: false,
+        message: 'Confirmation required',
+        error: 'Add ?confirm=true to permanently delete this customer'
+      };
+      res.status(400).json(response);
+      return;
+    }
+    
+    // Check if customer exists and belongs to user
+    const existingCustomer = await prisma.customer.findFirst({
+      where: {
+        id,
+        userId: req.user!.id
+      },
+      include: {
+        _count: {
+          select: {
+            dailyEntries: true,
+            payments: true
+          }
+        }
+      }
+    });
+    
+    if (!existingCustomer) {
+      const response: ApiResponse = {
+        success: false,
+        message: 'Customer not found',
+        error: 'The requested customer does not exist or you do not have permission to delete it'
+      };
+      res.status(404).json(response);
+      return;
+    }
+
+    // Calculate customer balance
+    const entriesSum = await prisma.dailyEntry.aggregate({
+      where: {
+        customerId: id,
+        userId: req.user!.id
+      },
+      _sum: {
+        amount: true
+      }
+    });
+
+    const paymentsSum = await prisma.payment.aggregate({
+      where: {
+        customerId: id,
+        userId: req.user!.id
+      },
+      _sum: {
+        amount: true
+      }
+    });
+
+    const totalBilled = Number(entriesSum._sum.amount || 0);
+    const totalPaid = Number(paymentsSum._sum.amount || 0);
+    const balance = totalBilled - totalPaid;
+
+    // For hard delete, we require zero balance and no dependencies
+    const hasEntries = existingCustomer._count.dailyEntries > 0;
+    const hasPayments = existingCustomer._count.payments > 0;
+    const hasPendingBalance = Math.abs(balance) > 0.01;
+
+    if (hasEntries || hasPayments || hasPendingBalance) {
+      const dependencies = [];
+      if (hasEntries) dependencies.push(`${existingCustomer._count.dailyEntries} delivery entries`);
+      if (hasPayments) dependencies.push(`${existingCustomer._count.payments} payment records`);
+      if (hasPendingBalance) {
+        const balanceText = balance > 0 ? `₹${balance.toFixed(2)} pending payment` : `₹${Math.abs(balance).toFixed(2)} advance balance`;
+        dependencies.push(balanceText);
+      }
+
+      const response: ApiResponse = {
+        success: false,
+        message: 'Cannot permanently delete customer',
+        error: `Customer has ${dependencies.join(', ')}. All data must be cleared before permanent deletion.`,
+        data: {
+          canDelete: false,
+          dependencies: {
+            entries: existingCustomer._count.dailyEntries,
+            payments: existingCustomer._count.payments,
+            pendingBalance: balance,
+            hasAdvance: balance < 0,
+            list: dependencies
+          }
+        }
+      };
+      res.status(400).json(response);
+      return;
+    }
+    
+    // Store customer info for logging before deletion
+    const customerInfo = {
+      id: existingCustomer.id,
+      name: existingCustomer.name,
+      phone: existingCustomer.phone
+    };
+    
+    // Log activity before deletion
+    await prisma.activityLog.create({
+      data: {
+        userId: req.user!.id,
+        action: 'CUSTOMER_DELETED',
+        entityType: 'CUSTOMER',
+        entityId: customerInfo.id,
+        entityName: customerInfo.name,
+        description: `Permanently deleted customer: ${customerInfo.name}`,
+        metadata: {
+          phone: customerInfo.phone,
+          deletionType: 'permanent',
+          entriesCount: existingCustomer._count.dailyEntries,
+          paymentsCount: existingCustomer._count.payments,
+          finalBalance: balance
+        },
+        ipAddress: req.ip || null,
+        userAgent: req.get('User-Agent') || null
+      }
+    });
+    
+    // Permanently delete customer (this will cascade delete related records due to DB constraints)
+    await prisma.customer.delete({
+      where: { id }
+    });
+    
     const response: ApiResponse = {
       success: true,
-      message: 'Customer deleted successfully',
+      message: 'Customer permanently deleted',
       data: {
-        id: deletedCustomer.id,
-        name: deletedCustomer.name
+        id: customerInfo.id,
+        name: customerInfo.name,
+        deletionType: 'permanent'
       }
     };
     

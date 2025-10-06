@@ -8,8 +8,16 @@ import { getTodayString } from '@/utils/date';
 import { Users, Calendar, Wallet, CircleAlert as AlertCircle, TrendingUp } from 'lucide-react-native';
 
 export default function HomeScreen() {
+  console.log('🏠 HomeScreen rendering...');
   const router = useRouter();
   const { customers, dailyEntries, payments, loading, getCustomerBalance } = useData();
+
+  console.log('📊 HomeScreen data state:', { 
+    customers: customers.length, 
+    dailyEntries: dailyEntries.length, 
+    payments: payments.length, 
+    loading 
+  });
 
   const todayString = getTodayString();
 

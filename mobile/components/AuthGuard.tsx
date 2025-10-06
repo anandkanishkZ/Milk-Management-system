@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
-import SplashScreen from './SplashScreen';
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -12,39 +11,41 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   const { user, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
-    // Show splash screen for 3 seconds only on app start
-    if (pathname === '/') {
-      const timer = setTimeout(() => {
-        setShowSplash(false);
-      }, 3000);
-      return () => clearTimeout(timer);
-    } else {
-      setShowSplash(false);
-    }
-  }, [pathname]);
-
-  useEffect(() => {
-    if (!loading && !showSplash) {
+    console.log('🛡️ AuthGuard effect triggered:', { 
+      user: !!user, 
+      loading, 
+      pathname
+    });
+    
+    // Handle navigation after loading is complete
+    if (!loading) {
       const isAuthRoute = pathname.startsWith('/auth');
       const isTabRoute = pathname.startsWith('/(tabs)');
+      const isIndexRoute = pathname === '/';
+      
+      console.log('🛡️ AuthGuard navigation check:', { 
+        user: !!user, 
+        pathname, 
+        isAuthRoute, 
+        isTabRoute, 
+        isIndexRoute 
+      });
       
       if (!user && !isAuthRoute) {
-        // User not authenticated and not on auth route, redirect to signin
+        // User not authenticated - go to signin
+        console.log('🔐 AuthGuard: Redirecting to signin (no user)');
         router.replace('/auth/signin' as any);
-      } else if (user && isAuthRoute) {
-        // User authenticated but on auth route, redirect to tabs
+      } else if (user && (isAuthRoute || isIndexRoute)) {
+        // User authenticated but on wrong route - go to tabs
+        console.log('👤 AuthGuard: Redirecting to tabs (user authenticated)');
         router.replace('/(tabs)' as any);
+      } else {
+        console.log('✅ AuthGuard: User on correct route, no navigation needed');
       }
     }
-  }, [user, loading, pathname, showSplash]);
-
-  // Show splash screen on app start
-  if (showSplash && pathname === '/') {
-    return <SplashScreen />;
-  }
+  }, [user, loading, pathname]);
 
   // Show loading while auth state is being determined
   if (loading) {

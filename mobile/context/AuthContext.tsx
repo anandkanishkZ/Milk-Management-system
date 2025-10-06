@@ -37,15 +37,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const checkAuthStatus = async () => {
+    const startTime = Date.now();
+    console.log('🔍 Starting auth status check...');
+    
     try {
       setLoading(true);
+      
+      // Add timeout to prevent infinite loading (10 seconds max)
+      const timeoutId = setTimeout(() => {
+        console.warn('⚠️ Auth check timeout - setting loading to false');
+        setLoading(false);
+      }, 10000);
       
       // Check if we have stored tokens
       const tokenData = await AsyncStorage.getItem('auth_tokens');
       if (!tokenData) {
+        console.log('❌ No stored tokens found');
+        clearTimeout(timeoutId);
         setLoading(false);
         return;
       }
+      
+      console.log('✅ Stored tokens found');
 
       // Check if user data exists in storage (faster than API call)
       const userData = await AsyncStorage.getItem('user_data');
@@ -54,6 +67,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const parsedUser = JSON.parse(userData);
           setUser(parsedUser);
           setError(null);
+          clearTimeout(timeoutId);
+          setLoading(false);
+          
+          console.log(`✅ Auth check completed in ${Date.now() - startTime}ms (cached)`);
           
           // Validate tokens in background (non-blocking)
           setTimeout(async () => {
@@ -73,16 +90,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // If no valid user data, try to get current user (this will refresh tokens if needed)
-      const response = await apiService.getCurrentUser();
-      if (response && response.user) {
-        setUser(response.user);
-        setError(null);
-      } else {
-        // Clear invalid tokens
-        await AsyncStorage.removeItem('auth_tokens');
-        await AsyncStorage.removeItem('user_data');
+      try {
+        const response = await apiService.getCurrentUser();
+        if (response && response.user) {
+          setUser(response.user);
+          setError(null);
+          console.log(`✅ Auth check completed in ${Date.now() - startTime}ms (API)`);
+        } else {
+          // Clear invalid tokens
+          await AsyncStorage.removeItem('auth_tokens');
+          await AsyncStorage.removeItem('user_data');
+          setUser(null);
+          console.log('❌ Invalid user response from API');
+        }
+      } catch (apiError: any) {
+        console.warn('API call failed during auth check:', apiError.message);
+        // If API fails, don't clear tokens - they might work later
         setUser(null);
       }
+      
+      clearTimeout(timeoutId);
+      setLoading(false);
     } catch (error: any) {
       console.error('Auth check error:', error);
       
