@@ -27,6 +27,7 @@ export default function SignInScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({ email: '', password: '' });
+  const [rememberMe, setRememberMe] = useState(true); // Default to true for convenience
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
@@ -89,7 +90,11 @@ export default function SignInScreen() {
     try {
       await login(email, password);
       
-      Alert.alert('Success', 'Signed in successfully!', [
+      const message = rememberMe 
+        ? 'Signed in successfully! You\'ll stay logged in for 3 months.'
+        : 'Signed in successfully!';
+      
+      Alert.alert('Success', message, [
         {
           text: 'OK',
           onPress: () => router.replace('/(tabs)' as any),
@@ -209,6 +214,19 @@ export default function SignInScreen() {
                 </View>
                 {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
               </View>
+
+              {/* Remember Me */}
+              <TouchableOpacity 
+                style={styles.rememberMeContainer}
+                onPress={() => setRememberMe(!rememberMe)}
+              >
+                <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                  {rememberMe && (
+                    <Ionicons name="checkmark" size={16} color="#fff" />
+                  )}
+                </View>
+                <Text style={styles.rememberMeText}>Keep me logged in for 3 months</Text>
+              </TouchableOpacity>
 
               {/* Forgot Password */}
               <TouchableOpacity 
@@ -341,6 +359,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 5,
     marginLeft: 10,
+  },
+  rememberMeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+    paddingHorizontal: 5,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#ddd',
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+  checkboxChecked: {
+    backgroundColor: '#1976D2',
+    borderColor: '#1976D2',
+  },
+  rememberMeText: {
+    fontSize: 14,
+    color: '#666',
+    flex: 1,
   },
   forgotPassword: {
     alignSelf: 'flex-end',

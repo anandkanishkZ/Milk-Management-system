@@ -58,6 +58,54 @@ class ApiService {
     }
   }
 
+  private async getRefreshToken(): Promise<string | null> {
+    try {
+      const tokens = await AsyncStorage.getItem('auth_tokens');
+      if (tokens) {
+        const { refreshToken } = JSON.parse(tokens);
+        return refreshToken;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting refresh token:', error);
+      return null;
+    }
+  }
+
+  private async refreshAccessToken(): Promise<string | null> {
+    try {
+      const refreshToken = await this.getRefreshToken();
+      if (!refreshToken) {
+        return null;
+      }
+
+      const response = await fetch(`${this.apiUrl}/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!response.ok) {
+        // Refresh token is invalid or expired
+        await this.clearAuthTokens();
+        return null;
+      }
+
+      const data = await response.json();
+      if (data.success && data.data) {
+        await this.setAuthTokens(data.data);
+        return data.data.accessToken;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error refreshing token:', error);
+      return null;
+    }
+  }
+
   private async setAuthTokens(tokens: AuthTokens): Promise<void> {
     try {
       await AsyncStorage.setItem('auth_tokens', JSON.stringify(tokens));
@@ -75,10 +123,11 @@ class ApiService {
     }
   }
 
-  // HTTP Request Helper
+  // HTTP Request Helper with automatic token refresh
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retryCount = 0
   ): Promise<ApiResponse<T>> {
     try {
       const token = await this.getAuthToken();
@@ -105,10 +154,20 @@ class ApiService {
       const data = await response.json();
 
       if (!response.ok) {
-        // Handle 401 Unauthorized - clear tokens and redirect to login
-        if (response.status === 401) {
-          await this.clearAuthTokens();
-          throw new Error('Session expired. Please login again.');
+        // Handle 401 Unauthorized - try to refresh token
+        if (response.status === 401 && retryCount === 0) {
+          log('🔄 Access token expired, attempting to refresh...');
+          const newToken = await this.refreshAccessToken();
+          
+          if (newToken) {
+            log('✅ Token refreshed successfully, retrying request...');
+            // Retry the request with new token
+            return this.request(endpoint, options, retryCount + 1);
+          } else {
+            log('❌ Token refresh failed, clearing tokens...');
+            await this.clearAuthTokens();
+            throw new Error('Session expired. Please login again.');
+          }
         }
         throw new Error(data.error || data.message || 'API request failed');
       }
@@ -156,7 +215,13 @@ class ApiService {
 
   async logout(): Promise<void> {
     try {
-      await this.request('/auth/logout', { method: 'POST' });
+      const refreshToken = await this.getRefreshToken();
+      if (refreshToken) {
+        await this.request('/auth/logout', { 
+          method: 'POST',
+          body: JSON.stringify({ refreshToken })
+        });
+      }
     } catch (error) {
       console.warn('Logout API call failed:', error);
     } finally {
@@ -217,8 +282,31 @@ class ApiService {
     return response.data!;
   }
 
-  async deleteCustomer(id: string): Promise<void> {
-    await this.request(`/customers/${id}`, { method: 'DELETE' });
+  async deleteCustomer(id: string, permanent?: boolean): Promise<Customer | void> {
+    if (permanent) {
+      await this.request(`/customers/${id}/permanent?confirm=true`, { method: 'DELETE' });
+      return; // Permanent delete returns void
+    } else {
+      // Soft delete returns updated customer with isActive: false
+      const response = await this.request<Customer>(`/customers/${id}`, { method: 'DELETE' });
+      return response.data!;
+    }
+  }
+
+  async checkCustomerCanDelete(id: string): Promise<{
+    canDelete: boolean;
+    customer: { id: string; name: string; phone: string };
+    dependencies: {
+      entries: number;
+      payments: number;
+      pendingBalance: number;
+      hasAdvance: boolean;
+      list: string[];
+    };
+    message: string;
+  }> {
+    const response = await this.request<any>(`/customers/${id}/can-delete`);
+    return response.data!;
   }
 
   // Daily Entries API

@@ -13,15 +13,22 @@ import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { useData } from '@/context/DataContext';
 import { Customer } from '@/types';
-import { Users, Plus, Search, Phone, MapPin, X } from 'lucide-react-native';
+import { Users, Plus, Search, Phone, MapPin, X, Trash2, AlertTriangle } from 'lucide-react-native';
 import { getDayName } from '@/utils/date';
 
 export default function CustomersScreen() {
-  const { customers, addCustomer, updateCustomer, deleteCustomer, getCustomerBalance } = useData();
+  const { customers, addCustomer, updateCustomer, deleteCustomer, checkCustomerCanDelete, getCustomerBalance } = useData();
   const [searchQuery, setSearchQuery] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
+  const [deleteValidation, setDeleteValidation] = useState<any>(null);
+  const [deletingCustomer, setDeletingCustomer] = useState(false);
+  const [deleteType, setDeleteType] = useState<'soft' | 'permanent'>('soft');
+  const [deactivateModalVisible, setDeactivateModalVisible] = useState(false);
+  const [customerToDeactivate, setCustomerToDeactivate] = useState<Customer | null>(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -132,23 +139,94 @@ export default function CustomersScreen() {
     }));
   };
 
-  const handleDeactivate = async (customer: Customer) => {
-    Alert.alert(
-      'Deactivate Customer',
-      `Are you sure you want to deactivate ${customer.name}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Deactivate',
-          style: 'destructive',
-          onPress: () => updateCustomer(customer.id, { isActive: false }),
-        },
-      ]
-    );
+  const handleDeactivatePress = (customer: Customer) => {
+    setCustomerToDeactivate(customer);
+    setDeactivateModalVisible(true);
+  };
+
+  const handleConfirmDeactivate = async () => {
+    if (!customerToDeactivate) return;
+    
+    try {
+      await updateCustomer(customerToDeactivate.id, { isActive: false });
+      setDeactivateModalVisible(false);
+      setCustomerToDeactivate(null);
+      Alert.alert('Success', `${customerToDeactivate.name} has been deactivated successfully.`);
+    } catch (error: any) {
+      console.error('Error deactivating customer:', error);
+      Alert.alert('Error', error.message || 'Failed to deactivate customer. Please try again.');
+    }
   };
 
   const handleActivate = async (customer: Customer) => {
     await updateCustomer(customer.id, { isActive: true });
+  };
+
+  const handleDeletePress = async (customer: Customer) => {
+    try {
+      setCustomerToDelete(customer);
+      setDeleteValidation(null);
+      setDeleteType('soft');
+      setDeleteModalVisible(true);
+      
+      // Check if customer can be deleted
+      const validation = await checkCustomerCanDelete(customer.id);
+      setDeleteValidation(validation);
+    } catch (error: any) {
+      console.error('Error checking delete validation:', error);
+      Alert.alert('Error', 'Failed to check customer status. Please try again.');
+      setDeleteModalVisible(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!customerToDelete || !deleteValidation) return;
+    
+    const isPermanent = deleteType === 'permanent';
+    
+    if (!deleteValidation.canDelete && (isPermanent || deleteValidation.dependencies.entries > 0 || deleteValidation.dependencies.payments > 0 || Math.abs(deleteValidation.dependencies.pendingBalance) > 0.01)) {
+      Alert.alert(
+        `Cannot ${isPermanent ? 'Permanently Delete' : 'Deactivate'} Customer`,
+        `${customerToDelete.name} has ${deleteValidation.dependencies.list.join(', ')}.\n\nPlease settle all payments and clear history before ${isPermanent ? 'permanent deletion' : 'deactivation'}.`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    const actionText = isPermanent ? 'permanently delete' : 'deactivate';
+    const warningText = isPermanent ? 'This action cannot be undone and will remove all data permanently!' : 'Customer will be moved to inactive list.';
+
+    Alert.alert(
+      `${isPermanent ? 'Permanently Delete' : 'Deactivate'} Customer`,
+      `Are you sure you want to ${actionText} ${customerToDelete.name}?\n\n${warningText}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: isPermanent ? 'Delete Permanently' : 'Deactivate',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setDeletingCustomer(true);
+              await deleteCustomer(customerToDelete.id, isPermanent);
+              setDeleteModalVisible(false);
+              setCustomerToDelete(null);
+              setDeleteValidation(null);
+              
+              const successMessage = isPermanent 
+                ? `${customerToDelete.name} has been permanently deleted.`
+                : `${customerToDelete.name} has been deactivated and moved to inactive list.`;
+              
+              Alert.alert('Success', successMessage);
+            } catch (error: any) {
+              console.error('Error deleting customer:', error);
+              Alert.alert('Error', error.message || `Failed to ${actionText} customer. Please try again.`);
+            } finally {
+              setDeletingCustomer(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const renderCustomerCard = (customer: Customer) => {
@@ -156,48 +234,58 @@ export default function CustomersScreen() {
     const balanceColor = balance.balance > 0 ? '#dc2626' : balance.balance < 0 ? '#16a34a' : '#6b7280';
 
     return (
-      <TouchableOpacity
-        key={customer.id}
-        style={styles.customerCard}
-        onPress={() => openEditModal(customer)}
-      >
-        <View style={styles.customerHeader}>
-          <Text style={styles.customerName}>{customer.name}</Text>
-          {balance.balance !== 0 && (
-            <Text style={[styles.balance, { color: balanceColor }]}>
-              ₹{Math.abs(balance.balance).toFixed(2)}
-              {balance.balance < 0 ? ' (adv)' : ''}
-            </Text>
-          )}
-        </View>
-
-        <View style={styles.customerDetails}>
-          {customer.phone && (
-            <View style={styles.detailRow}>
-              <Phone size={14} color="#6b7280" />
-              <Text style={styles.detailText}>{customer.phone}</Text>
+      <View key={customer.id} style={styles.customerCard}>
+        <TouchableOpacity
+          style={styles.customerCardContent}
+          onPress={() => openEditModal(customer)}
+        >
+          <View style={styles.customerHeader}>
+            <Text style={styles.customerName}>{customer.name}</Text>
+            <View style={styles.customerHeaderRight}>
+              {balance.balance !== 0 && (
+                <Text style={[styles.balance, { color: balanceColor }]}>
+                  ₹{Math.abs(balance.balance).toFixed(2)}
+                  {balance.balance < 0 ? ' (adv)' : ''}
+                </Text>
+              )}
+              <TouchableOpacity
+                style={styles.deleteButton}
+                onPress={() => handleDeletePress(customer)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Trash2 size={16} color="#dc2626" />
+              </TouchableOpacity>
             </View>
-          )}
-          {customer.address && (
-            <View style={styles.detailRow}>
-              <MapPin size={14} color="#6b7280" />
-              <Text style={styles.detailText}>{customer.address}</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.customerFooter}>
-          <Text style={styles.footerText}>
-            {customer.defaultQuantity}L @ ₹{customer.defaultPrice}/L
-          </Text>
-          <View style={styles.daysContainer}>
-            {customer.deliveryDays.map((day) => (
-              <Text key={day} style={styles.dayBadge}>
-                {getDayName(day)}
-              </Text>
-            ))}
           </View>
-        </View>
+
+          <View style={styles.customerDetails}>
+            {customer.phone && (
+              <View style={styles.detailRow}>
+                <Phone size={14} color="#6b7280" />
+                <Text style={styles.detailText}>{customer.phone}</Text>
+              </View>
+            )}
+            {customer.address && (
+              <View style={styles.detailRow}>
+                <MapPin size={14} color="#6b7280" />
+                <Text style={styles.detailText}>{customer.address}</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.customerFooter}>
+            <Text style={styles.footerText}>
+              {customer.defaultQuantity}L @ ₹{customer.defaultPrice}/L
+            </Text>
+            <View style={styles.daysContainer}>
+              {customer.deliveryDays.map((day) => (
+                <Text key={day} style={styles.dayBadge}>
+                  {getDayName(day)}
+                </Text>
+              ))}
+            </View>
+          </View>
+        </TouchableOpacity>
 
         {!customer.isActive && (
           <TouchableOpacity
@@ -207,7 +295,7 @@ export default function CustomersScreen() {
             <Text style={styles.activateButtonText}>Activate</Text>
           </TouchableOpacity>
         )}
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -255,6 +343,131 @@ export default function CustomersScreen() {
         )}
       </ScrollView>
 
+      {/* Delete Confirmation Modal */}
+      <Modal visible={deleteModalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.deleteModalContent}>
+            <View style={styles.deleteModalHeader}>
+              <AlertTriangle size={24} color="#dc2626" />
+              <Text style={styles.deleteModalTitle}>Delete Customer</Text>
+              <TouchableOpacity onPress={() => setDeleteModalVisible(false)}>
+                <X size={24} color="#6b7280" />
+              </TouchableOpacity>
+            </View>
+
+            {customerToDelete && (
+              <View style={styles.deleteModalBody}>
+                <Text style={styles.deleteCustomerName}>{customerToDelete.name}</Text>
+                
+                {deleteValidation ? (
+                  <View>
+                    {deleteValidation.canDelete ? (
+                      <View style={styles.deleteOptionsContainer}>
+                        <Text style={styles.deleteOptionsTitle}>Choose deletion type:</Text>
+                        
+                        <TouchableOpacity
+                          style={[
+                            styles.deleteOption,
+                            deleteType === 'soft' && styles.deleteOptionSelected
+                          ]}
+                          onPress={() => setDeleteType('soft')}
+                        >
+                          <View style={styles.deleteOptionContent}>
+                            <Text style={[
+                              styles.deleteOptionTitle,
+                              deleteType === 'soft' && styles.deleteOptionTitleSelected
+                            ]}>
+                              Deactivate Customer
+                            </Text>
+                            <Text style={[
+                              styles.deleteOptionDescription,
+                              deleteType === 'soft' && styles.deleteOptionDescriptionSelected
+                            ]}>
+                              Move to inactive list. Can be reactivated later.
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity
+                          style={[
+                            styles.deleteOption,
+                            deleteType === 'permanent' && styles.deleteOptionSelected
+                          ]}
+                          onPress={() => setDeleteType('permanent')}
+                        >
+                          <View style={styles.deleteOptionContent}>
+                            <Text style={[
+                              styles.deleteOptionTitle,
+                              deleteType === 'permanent' && styles.deleteOptionTitleSelected
+                            ]}>
+                              Delete Permanently
+                            </Text>
+                            <Text style={[
+                              styles.deleteOptionDescription,
+                              deleteType === 'permanent' && styles.deleteOptionDescriptionSelected
+                            ]}>
+                              Remove completely. This cannot be undone!
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <View style={styles.cannotDeleteContainer}>
+                        <Text style={styles.cannotDeleteTitle}>Cannot Delete</Text>
+                        <Text style={styles.cannotDeleteMessage}>
+                          This customer has:
+                        </Text>
+                        {deleteValidation.dependencies.list.map((dep: string, index: number) => (
+                          <Text key={index} style={styles.dependencyItem}>• {dep}</Text>
+                        ))}
+                        <Text style={styles.cannotDeleteAdvice}>
+                          Please settle all payments and clear history before deleting.
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                ) : (
+                  <View style={styles.loadingDeleteContainer}>
+                    <Text style={styles.loadingDeleteText}>Checking customer status...</Text>
+                  </View>
+                )}
+
+                <View style={styles.deleteModalActions}>
+                  <TouchableOpacity
+                    style={styles.cancelDeleteButton}
+                    onPress={() => setDeleteModalVisible(false)}
+                  >
+                    <Text style={styles.cancelDeleteButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  
+                  {deleteValidation?.canDelete && (
+                    <TouchableOpacity
+                      style={[
+                        styles.confirmDeleteButton,
+                        deletingCustomer && styles.confirmDeleteButtonDisabled
+                      ]}
+                      onPress={handleConfirmDelete}
+                      disabled={deletingCustomer}
+                    >
+                      <Text style={[
+                        styles.confirmDeleteButtonText,
+                        deletingCustomer && styles.confirmDeleteButtonTextDisabled
+                      ]}>
+                        {deletingCustomer 
+                          ? (deleteType === 'permanent' ? 'Deleting...' : 'Deactivating...') 
+                          : (deleteType === 'permanent' ? 'Delete Permanently' : 'Deactivate')
+                        }
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit/Add Customer Modal */}
       <Modal visible={modalVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -356,7 +569,7 @@ export default function CustomersScreen() {
                     style={styles.deactivateButton}
                     onPress={() => {
                       setModalVisible(false);
-                      handleDeactivate(editingCustomer);
+                      handleDeactivatePress(editingCustomer);
                     }}
                   >
                     <Text style={styles.deactivateButtonText}>Deactivate</Text>
@@ -381,15 +594,60 @@ export default function CustomersScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Deactivate Confirmation Modal */}
+      <Modal visible={deactivateModalVisible} animationType="fade" transparent={true}>
+        <View style={styles.deactivateModalOverlay}>
+          <View style={styles.deactivateModalContent}>
+            <View style={styles.deactivateModalHeader}>
+              <AlertTriangle size={24} color="#f59e0b" />
+              <Text style={styles.deactivateModalTitle}>Deactivate Customer</Text>
+            </View>
+
+            {customerToDeactivate && (
+              <>
+                <Text style={styles.deactivateModalText}>
+                  Are you sure you want to deactivate{' '}
+                  <Text style={styles.customerNameBold}>{customerToDeactivate.name}</Text>?
+                </Text>
+                
+                <Text style={styles.deactivateModalSubtext}>
+                  The customer will be moved to the inactive list and won't appear in daily delivery screens. You can reactivate them later if needed.
+                </Text>
+
+                <View style={styles.deactivateModalActions}>
+                  <TouchableOpacity
+                    style={styles.cancelButton}
+                    onPress={() => {
+                      setDeactivateModalVisible(false);
+                      setCustomerToDeactivate(null);
+                    }}
+                  >
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.deactivateConfirmButton}
+                    onPress={handleConfirmDeactivate}
+                  >
+                    <Text style={styles.deactivateConfirmButtonText}>Deactivate</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  // Base styles
   container: {
     flex: 1,
     backgroundColor: '#f9fafb',
-    paddingBottom: 75, // Account for tab bar height
+    paddingBottom: 75,
   },
   header: {
     backgroundColor: '#2563eb',
@@ -450,10 +708,11 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  
+  // Customer card styles
   customerCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 16,
     marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -461,11 +720,19 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
+  customerCardContent: {
+    padding: 16,
+  },
   customerHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
+  },
+  customerHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   customerName: {
     fontSize: 18,
@@ -476,6 +743,11 @@ const styles = StyleSheet.create({
   balance: {
     fontSize: 16,
     fontWeight: '700',
+  },
+  deleteButton: {
+    padding: 4,
+    borderRadius: 6,
+    backgroundColor: '#fef2f2',
   },
   customerDetails: {
     gap: 6,
@@ -528,6 +800,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
   },
+  
+  // Empty state
   emptyState: {
     flex: 1,
     alignItems: 'center',
@@ -547,6 +821,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
+  
+  // Modal styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -669,5 +945,223 @@ const styles = StyleSheet.create({
   },
   saveButtonTextDisabled: {
     color: '#e5e7eb',
+  },
+  
+  // Delete Modal styles
+  deleteModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+    minHeight: '40%',
+  },
+  deleteModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+    gap: 12,
+  },
+  deleteModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    flex: 1,
+  },
+  deleteModalBody: {
+    padding: 20,
+  },
+  deleteCustomerName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  deleteOptionsContainer: {
+    marginBottom: 20,
+  },
+  deleteOptionsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 12,
+  },
+  deleteOption: {
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    marginBottom: 12,
+    backgroundColor: '#fff',
+  },
+  deleteOptionSelected: {
+    borderColor: '#2563eb',
+    backgroundColor: '#eff6ff',
+  },
+  deleteOptionContent: {
+    padding: 16,
+  },
+  deleteOptionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  deleteOptionTitleSelected: {
+    color: '#2563eb',
+  },
+  deleteOptionDescription: {
+    fontSize: 14,
+    color: '#6b7280',
+    lineHeight: 20,
+  },
+  deleteOptionDescriptionSelected: {
+    color: '#1d4ed8',
+  },
+  cannotDeleteContainer: {
+    backgroundColor: '#fef2f2',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  cannotDeleteTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#dc2626',
+    marginBottom: 8,
+  },
+  cannotDeleteMessage: {
+    fontSize: 14,
+    color: '#374151',
+    marginBottom: 8,
+  },
+  dependencyItem: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginLeft: 8,
+    marginBottom: 4,
+  },
+  cannotDeleteAdvice: {
+    fontSize: 14,
+    color: '#374151',
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  loadingDeleteContainer: {
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingDeleteText: {
+    fontSize: 16,
+    color: '#6b7280',
+  },
+  deleteModalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  cancelDeleteButton: {
+    flex: 1,
+    backgroundColor: '#f3f4f6',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelDeleteButtonText: {
+    color: '#374151',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmDeleteButton: {
+    flex: 1,
+    backgroundColor: '#dc2626',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  confirmDeleteButtonDisabled: {
+    backgroundColor: '#9ca3af',
+    opacity: 0.6,
+  },
+  confirmDeleteButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmDeleteButtonTextDisabled: {
+    color: '#e5e7eb',
+  },
+  // Deactivate modal styles
+  deactivateModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  deactivateModalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+  },
+  deactivateModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  deactivateModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  deactivateModalText: {
+    fontSize: 16,
+    color: '#374151',
+    marginBottom: 12,
+    lineHeight: 22,
+  },
+  deactivateModalSubtext: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  customerNameBold: {
+    fontWeight: '700',
+    color: '#111827',
+  },
+  deactivateModalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#f3f4f6',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: '#374151',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  deactivateConfirmButton: {
+    flex: 1,
+    backgroundColor: '#f59e0b',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  deactivateConfirmButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

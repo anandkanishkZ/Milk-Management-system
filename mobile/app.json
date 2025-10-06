@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "Milk Delivery Manager",
-    "slug": "milk-delivery-manager",
+    "name": "Milk Delivery Manager (Dev)",
+    "slug": "milk-delivery-manager-dev",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "milkdelivery",
+    "scheme": "milkdelivery-dev",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "android": {
-      "package": "com.dhudhwala.milkdelivery",
+      "package": "com.dhudhwala.milkdelivery.dev",
       "versionCode": 1,
       "compileSdkVersion": 34,
       "targetSdkVersion": 34,
@@ -17,7 +17,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.dhudhwala.milkdelivery"
+      "bundleIdentifier": "com.dhudhwala.milkdelivery.dev"
     },
     "web": {
       "bundler": "metro",
@@ -36,10 +36,11 @@
       "eas": {
         "projectId": "b8482488-eac1-40c7-9313-8ea2fbb92a15"
       },
-      "apiBaseUrl": "http://192.168.1.119:3000",
+      "apiBaseUrl": "http://localhost:3000",
       "apiVersion": "/api/v1",
       "apiTimeout": 10000,
-      "environment": "development"
+      "environment": "development",
+      "enableLogging": true
     }
   }
 }

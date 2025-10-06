@@ -40,29 +40,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setLoading(true);
       
-      // Check if we have a stored token
-      const token = await AsyncStorage.getItem('auth_tokens');
-      if (!token) {
+      // Check if we have stored tokens
+      const tokenData = await AsyncStorage.getItem('auth_tokens');
+      if (!tokenData) {
         setLoading(false);
         return;
       }
 
-      // Verify token with backend
+      // Check if user data exists in storage (faster than API call)
+      const userData = await AsyncStorage.getItem('user_data');
+      if (userData) {
+        try {
+          const parsedUser = JSON.parse(userData);
+          setUser(parsedUser);
+          setError(null);
+          
+          // Validate tokens in background (non-blocking)
+          setTimeout(async () => {
+            try {
+              // Make a lightweight API call to validate session
+              await apiService.getCurrentUser();
+            } catch (error: any) {
+              console.warn('Background token validation failed:', error);
+              // Token will be refreshed automatically on next API call
+            }
+          }, 1000);
+          
+          return;
+        } catch (parseError) {
+          console.error('Error parsing stored user data:', parseError);
+        }
+      }
+
+      // If no valid user data, try to get current user (this will refresh tokens if needed)
       const response = await apiService.getCurrentUser();
       if (response && response.user) {
         setUser(response.user);
         setError(null);
       } else {
-        // Token is invalid, clear it
+        // Clear invalid tokens
         await AsyncStorage.removeItem('auth_tokens');
+        await AsyncStorage.removeItem('user_data');
         setUser(null);
       }
     } catch (error: any) {
       console.error('Auth check error:', error);
-      setError(error.message);
-      // Clear invalid token
-      await AsyncStorage.removeItem('auth_tokens');
-      setUser(null);
+      
+      // If error contains session expired, clear everything
+      if (error.message && error.message.includes('Session expired')) {
+        await AsyncStorage.removeItem('auth_tokens');
+        await AsyncStorage.removeItem('user_data');
+        setUser(null);
+        setError(null); // Don't show error for expired sessions
+      } else {
+        setError(error.message);
+      }
     } finally {
       setLoading(false);
     }

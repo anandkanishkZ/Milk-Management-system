@@ -467,6 +467,40 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* Session Information */}
+        <View style={styles.sessionSection}>
+          <Text style={styles.sectionTitle}>Session & Security</Text>
+          <View style={styles.sessionCard}>
+            <View style={styles.sessionItem}>
+              <Shield size={16} color="#22c55e" />
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text style={styles.sessionText}>Logged in as {user?.email}</Text>
+                <Text style={[styles.sessionText, { fontSize: 12, color: '#6b7280' }]}>
+                  Account verified: {user?.isVerified ? 'Yes' : 'No'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.sessionItem}>
+              <Activity size={16} color="#3b82f6" />
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text style={styles.sessionText}>Extended Session Active</Text>
+                <Text style={[styles.sessionText, { fontSize: 12, color: '#6b7280' }]}>
+                  Stay logged in for 3 months
+                </Text>
+              </View>
+            </View>
+            <View style={styles.sessionItem}>
+              <Key size={16} color="#f59e0b" />
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text style={styles.sessionText}>Auto-refresh Authentication</Text>
+                <Text style={[styles.sessionText, { fontSize: 12, color: '#6b7280' }]}>
+                  Secure token-based system
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
         {menuSections.map((section, sectionIndex) => (
           <View key={sectionIndex} style={styles.section}>
             <Text style={styles.sectionTitle}>{section.title}</Text>
@@ -682,5 +716,27 @@ const styles = StyleSheet.create({
   versionText: {
     fontSize: 12,
     color: '#9ca3af',
+  },
+  sessionSection: {
+    paddingHorizontal: 20,
+    marginVertical: 16,
+  },
+  sessionCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  sessionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  sessionText: {
+    fontSize: 14,
+    color: '#4b5563',
+    marginLeft: 8,
+    flex: 1,
   },
 });

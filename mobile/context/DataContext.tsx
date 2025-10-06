@@ -12,7 +12,19 @@ interface DataContextType {
   loading: boolean;
   addCustomer: (customer: Omit<Customer, 'id' | 'createdAt'>) => Promise<void>;
   updateCustomer: (id: string, updates: Partial<Customer>) => Promise<void>;
-  deleteCustomer: (id: string) => Promise<void>;
+  deleteCustomer: (id: string, permanent?: boolean) => Promise<void>;
+  checkCustomerCanDelete: (id: string) => Promise<{
+    canDelete: boolean;
+    customer: { id: string; name: string; phone: string };
+    dependencies: {
+      entries: number;
+      payments: number;
+      pendingBalance: number;
+      hasAdvance: boolean;
+      list: string[];
+    };
+    message: string;
+  }>;
   addDailyEntry: (entry: Omit<DailyEntry, 'id' | 'createdAt'>) => Promise<void>;
   updateDailyEntry: (id: string, updates: Partial<DailyEntry>) => Promise<void>;
   deleteDailyEntry: (id: string) => Promise<void>;
@@ -155,16 +167,38 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const deleteCustomer = async (id: string) => {
+  const deleteCustomer = async (id: string, permanent?: boolean) => {
     try {
-      await apiService.deleteCustomer(id);
-      setCustomers(prev => prev.filter(c => c.id !== id));
+      const result = await apiService.deleteCustomer(id, permanent);
+      
+      if (permanent) {
+        // Permanent delete - remove from local state completely
+        setCustomers(prev => prev.filter(c => c.id !== id));
+      } else {
+        // Soft delete - update the customer to isActive: false
+        if (result) {
+          setCustomers(prev => prev.map(c => c.id === id ? result : c));
+        }
+      }
     } catch (error) {
       const isSessionExpired = await handleAuthError(error);
       if (!isSessionExpired) {
         logError('Failed to delete customer:', error);
         throw error;
       }
+    }
+  };
+
+  const checkCustomerCanDelete = async (id: string) => {
+    try {
+      return await apiService.checkCustomerCanDelete(id);
+    } catch (error) {
+      const isSessionExpired = await handleAuthError(error);
+      if (!isSessionExpired) {
+        logError('Failed to check customer delete status:', error);
+        throw error;
+      }
+      throw error;
     }
   };
 
@@ -412,6 +446,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     addCustomer,
     updateCustomer,
     deleteCustomer,
+    checkCustomerCanDelete,
     addDailyEntry,
     updateDailyEntry,
     deleteDailyEntry,
