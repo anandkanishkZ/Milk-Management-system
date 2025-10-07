@@ -191,6 +191,8 @@ enum ActivityAction {
   DATA_CLEARED
   APP_OPENED
   REPORT_VIEWED
+  REPORT_GENERATED
+  REPORT_DOWNLOADED
   HISTORY_VIEWED
   DATA_SYNCED
   SYNC_ERROR
@@ -214,4 +216,112 @@ enum ActivityEntity {
   AUTH
   
   @@map("activity_entity")
+}
+
+// Admin Users model for admin dashboard access
+model AdminUser {
+  id          String       @id @default(cuid())
+  email       String       @unique
+  password    String
+  name        String?
+  role        AdminRole    @default(ADMIN)
+  permissions String[]     @default([])
+  isActive    Boolean      @default(true) @map("is_active")
+  lastLoginAt DateTime?    @map("last_login_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  
+  @@map("admin_users")
+}
+
+// System Metrics model for tracking system performance
+model SystemMetric {
+  id          String   @id @default(cuid())
+  metricName  String   @map("metric_name")
+  metricValue Decimal  @map("metric_value") @db.Decimal(15,4)
+  metadata    Json?    @default("{}")
+  recordedAt  DateTime @default(now()) @map("recorded_at")
+  
+  @@index([metricName, recordedAt])
+  @@map("system_metrics")
+}
+
+// Admin Actions Log for audit trail
+model AdminAction {
+  id          String     @id @default(cuid())
+  adminId     String     @map("admin_id")
+  action      String
+  targetType  String     @map("target_type")
+  targetId    String?    @map("target_id")
+  targetName  String?    @map("target_name")
+  description String
+  metadata    Json?      @default("{}")
+  ipAddress   String?    @map("ip_address")
+  userAgent   String?    @map("user_agent")
+  timestamp   DateTime   @default(now())
+  
+  @@index([adminId, timestamp])
+  @@index([action, timestamp])
+  @@map("admin_actions")
+}
+
+// Report model for tracking generated reports
+model Report {
+  id          String       @id @default(cuid())
+  name        String
+  description String?
+  type        ReportType
+  timeRange   String
+  format      ReportFormat @default(PDF)
+  status      ReportStatus @default(GENERATING)
+  size        String?
+  filePath    String?
+  downloadUrl String?
+  generatedBy String       @map("generated_by")
+  metadata    Json?        @default("{}")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  
+  @@index([type, status])
+  @@index([generatedBy, createdAt])
+  @@map("reports")
+}
+
+// Report Type enum
+enum ReportType {
+  SALES
+  USERS
+  FINANCIAL
+  INVENTORY
+  PERFORMANCE
+  
+  @@map("report_type")
+}
+
+// Report Format enum
+enum ReportFormat {
+  PDF
+  EXCEL
+  CSV
+  
+  @@map("report_format")
+}
+
+// Report Status enum
+enum ReportStatus {
+  GENERATING
+  COMPLETED
+  FAILED
+  
+  @@map("report_status")
+}
+
+// Admin Role enum
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+  MODERATOR
+  VIEWER
+  
+  @@map("admin_role")
 }

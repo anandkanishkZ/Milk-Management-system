@@ -20,12 +20,14 @@ import paymentRoutes from './routes/payments';
 import reportRoutes from './routes/reports';
 import activityLogRoutes from './routes/activityLogs';
 import securityPinRoutes from './routes/securityPins';
+import adminRoutes from './routes/admin';
 
 // Import middleware
 import { errorHandler } from './middleware/errorHandler';
 import { notFoundHandler } from './middleware/notFoundHandler';
 import { requestLogger } from './middleware/requestLogger';
 import { authenticate } from './middleware/auth';
+import { authenticateAdmin } from './middleware/adminAuth';
 
 // Import socket handlers
 import { setupSocketHandlers } from './sockets/index';
@@ -60,15 +62,21 @@ app.use(helmet({
 }));
 
 // CORS configuration
+console.log('📋 Allowed CORS origins:', config.allowedOrigins);
 app.use(cors({
   origin: (origin, callback) => {
+    console.log('🌍 Request from origin:', origin);
+    console.log('📋 Checking against allowed origins:', config.allowedOrigins);
+    
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     
     if (config.allowedOrigins.includes(origin)) {
+      console.log('✅ Origin allowed:', origin);
       return callback(null, true);
     }
     
+    console.log('❌ Origin not allowed:', origin);
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
@@ -122,6 +130,7 @@ app.use(`${config.apiPrefix}/payments`, authenticate, paymentRoutes);
 app.use(`${config.apiPrefix}/reports`, authenticate, reportRoutes);
 app.use(`${config.apiPrefix}/activity-logs`, authenticate, activityLogRoutes);
 app.use(`${config.apiPrefix}/security-pins`, authenticate, securityPinRoutes);
+app.use(`${config.apiPrefix}/admin`, authenticateAdmin, adminRoutes);
 
 // Setup Socket.io handlers
 setupSocketHandlers(io);
