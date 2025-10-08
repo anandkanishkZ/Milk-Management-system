@@ -10,14 +10,21 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useData } from '@/context/DataContext';
 import { Customer } from '@/types';
-import { Users, Plus, Search, Phone, MapPin, X, Trash2, AlertTriangle } from 'lucide-react-native';
+import { Users, Plus, Search, Phone, MapPin, X, Trash2, AlertTriangle, Wifi, WifiOff } from 'lucide-react-native';
+import { useUserSocket, useRealtimeCustomers, useRealtimeNotifications } from '@/hooks/useSocket';
 import { getDayName } from '@/utils/date';
 
 export default function CustomersScreen() {
   const { customers, addCustomer, updateCustomer, deleteCustomer, checkCustomerCanDelete, getCustomerBalance } = useData();
+  
+  // Socket.IO hooks for real-time customer updates
+  const { isConnected, reconnect } = useUserSocket();
+  const { lastCustomerUpdate, updateCustomer: socketUpdateCustomer } = useRealtimeCustomers();
+  const { notifications, unreadCount } = useRealtimeNotifications();
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -303,10 +310,31 @@ export default function CustomersScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar style="light" backgroundColor="#2563eb" />
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Customers</Text>
-        <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
-          <Plus size={24} color="#fff" />
-        </TouchableOpacity>
+        <View style={styles.headerLeft}>
+          <Text style={styles.headerTitle}>Customers</Text>
+          <Text style={styles.headerSubtitle}>
+            {customers.length} total • {isConnected ? 'Live updates' : 'Offline mode'}
+          </Text>
+        </View>
+        <View style={styles.headerRight}>
+          {/* Connection Status Indicator */}
+          <TouchableOpacity onPress={reconnect} style={styles.connectionIndicator}>
+            {isConnected ? (
+              <Wifi size={20} color="#22c55e" />
+            ) : (
+              <WifiOff size={20} color="#ef4444" />
+            )}
+          </TouchableOpacity>
+          {/* Notifications Badge */}
+          {unreadCount > 0 && (
+            <View style={styles.notificationBadge}>
+              <Text style={styles.notificationCount}>{unreadCount}</Text>
+            </View>
+          )}
+          <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
+            <Plus size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.searchContainer}>
@@ -656,12 +684,44 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  headerLeft: {
+    flex: 1,
+  },
+  headerRight: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
     color: '#fff',
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#dbeafe',
+  },
+  connectionIndicator: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  notificationBadge: {
+    backgroundColor: '#ef4444',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
+  notificationCount: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   addButton: {
     width: 48,

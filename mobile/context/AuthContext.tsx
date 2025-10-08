@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { apiService } from '@/services/api';
+import { userSocket } from '@/services/socket';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface User {
@@ -67,6 +68,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const parsedUser = JSON.parse(userData);
           setUser(parsedUser);
           setError(null);
+          
+          // Connect to Socket.IO when user is restored
+          await userSocket.connect();
+          
           clearTimeout(timeoutId);
           setLoading(false);
           
@@ -95,6 +100,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (response && response.user) {
           setUser(response.user);
           setError(null);
+          
+          // Connect to Socket.IO when user is authenticated
+          await userSocket.connect();
+          
           console.log(`✅ Auth check completed in ${Date.now() - startTime}ms (API)`);
         } else {
           // Clear invalid tokens
@@ -136,6 +145,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const response = await apiService.login(email, password);
       if (response && response.user) {
         setUser(response.user);
+        
+        // Connect to Socket.IO after successful login
+        await userSocket.connect();
       } else {
         throw new Error('Login failed');
       }
@@ -156,6 +168,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const response = await apiService.register(userData);
       if (response && response.user) {
         setUser(response.user);
+        
+        // Connect to Socket.IO after successful registration
+        await userSocket.connect();
       } else {
         throw new Error('Registration failed');
       }
@@ -171,12 +186,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     try {
       setLoading(true);
+      
+      // Disconnect Socket.IO before logout
+      userSocket.disconnect();
+      
       await apiService.logout();
       setUser(null);
       setError(null);
     } catch (error: any) {
       console.error('Logout error:', error);
-      // Even if logout fails on server, clear local state
+      // Even if logout fails on server, clear local state and disconnect socket
+      userSocket.disconnect();
       setUser(null);
       setError(null);
     } finally {

@@ -28,23 +28,40 @@ class AdminSocketService {
   private eventListeners = new Map<string, Function[]>();
 
   constructor() {
-    this.connect();
+    // Only connect on client-side
+    if (typeof window !== 'undefined') {
+      this.connect();
+    }
   }
 
   /**
    * Connect to Socket.IO server with admin authentication
    */
   async connect(): Promise<void> {
+    // Only connect on client-side
+    if (typeof window === 'undefined') {
+      return;
+    }
+
     if (this.socket?.connected || this.isConnecting) {
       return;
     }
 
     try {
       this.isConnecting = true;
-      const token = localStorage.getItem('adminToken');
+      
+      let token: string | null = null;
+      try {
+        token = localStorage.getItem('adminToken');
+      } catch (storageError) {
+        console.warn('localStorage not available, cannot get admin token');
+        this.isConnecting = false;
+        return;
+      }
       
       if (!token) {
         console.warn('No admin token available for Socket.IO connection');
+        this.isConnecting = false;
         return;
       }
 
@@ -134,6 +151,11 @@ class AdminSocketService {
    * Emit event to server
    */
   emit(event: string, data?: any): void {
+    if (typeof window === 'undefined') {
+      console.warn('Socket emit called on server-side, ignoring:', event);
+      return;
+    }
+
     if (this.socket?.connected) {
       this.socket.emit(event, data);
     } else {
@@ -196,6 +218,7 @@ class AdminSocketService {
    * Check connection status
    */
   get isConnected(): boolean {
+    if (typeof window === 'undefined') return false;
     return this.socket?.connected ?? false;
   }
 
@@ -203,6 +226,7 @@ class AdminSocketService {
    * Get socket ID
    */
   get socketId(): string | undefined {
+    if (typeof window === 'undefined') return undefined;
     return this.socket?.id;
   }
 
@@ -210,21 +234,27 @@ class AdminSocketService {
    * Request real-time stats update
    */
   requestStats(): void {
-    this.emit('stats:request');
+    if (typeof window !== 'undefined') {
+      this.emit('stats:request');
+    }
   }
 
   /**
    * Request activity logs
    */
   requestActivity(limit = 10): void {
-    this.emit('activity:request', limit);
+    if (typeof window !== 'undefined') {
+      this.emit('activity:request', limit);
+    }
   }
 
   /**
    * Send health check ping
    */
   ping(): void {
-    this.emit('ping');
+    if (typeof window !== 'undefined') {
+      this.emit('ping');
+    }
   }
 }
 

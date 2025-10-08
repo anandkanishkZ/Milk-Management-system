@@ -202,6 +202,8 @@ enum ActivityAction {
   SECURITY_PIN_VERIFIED
   AUTH_SUCCESS
   AUTH_FAILURE
+  CONNECTION_ESTABLISHED
+  CONNECTION_LOST
   
   @@map("activity_action")
 }

@@ -16,6 +16,7 @@ export interface User {
 // Authentication types
 export interface AuthUser extends User {
   password?: never; // Never expose password in API responses
+  userType?: 'admin' | 'user'; // Type of user for socket handling
 }
 
 export interface LoginCredentials {

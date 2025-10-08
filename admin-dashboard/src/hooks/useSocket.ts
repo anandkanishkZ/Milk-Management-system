@@ -22,6 +22,11 @@ export const useAdminSocket = () => {
   const queryClient = useQueryClient();
 
   useEffect(() => {
+    // Only run on client-side
+    if (typeof window === 'undefined') {
+      return;
+    }
+
     // Update connection state
     const updateConnectionState = () => {
       setSocketState({
@@ -46,6 +51,9 @@ export const useAdminSocket = () => {
 
     // Monitor connection state
     const connectionCheckInterval = setInterval(updateConnectionState, 1000);
+    
+    // Initial connection state update
+    updateConnectionState();
 
     return () => {
       clearInterval(connectionCheckInterval);
@@ -221,43 +229,45 @@ export const useRealtimeActivity = (limit = 10) => {
  */
 export const useSocketHealth = () => {
   const [lastPing, setLastPing] = useState<Date | null>(null);
-  const [pingInterval, setPingInterval] = useState<NodeJS.Timeout | null>(null);
+  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useSocketEvent('pong', () => {
     setLastPing(new Date());
   });
 
   const startHealthCheck = useCallback((intervalMs = 30000) => {
-    if (pingInterval) {
-      clearInterval(pingInterval);
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
     }
 
     const interval = setInterval(() => {
       adminSocket.ping();
     }, intervalMs);
 
-    setPingInterval(interval);
+    pingIntervalRef.current = interval;
 
     return () => {
       if (interval) {
         clearInterval(interval);
       }
     };
-  }, [pingInterval]);
+  }, []);
 
   const stopHealthCheck = useCallback(() => {
-    if (pingInterval) {
-      clearInterval(pingInterval);
-      setPingInterval(null);
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
     }
-  }, [pingInterval]);
+  }, []);
 
   useEffect(() => {
     // Cleanup on unmount
     return () => {
-      stopHealthCheck();
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+      }
     };
-  }, [stopHealthCheck]);
+  }, []);
 
   return {
     lastPing,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApiService } from '@/lib/api';
 import AdminLayout from '@/components/AdminLayout';
@@ -18,9 +18,17 @@ import {
   MapPin,
   Activity,
   TrendingUp,
-  RefreshCw
+  RefreshCw,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { 
+  useAdminSocket, 
+  useRealtimeStats, 
+  useRealtimeActivity,
+  useSocketHealth 
+} from '@/hooks/useSocket';
 
 // Types
 interface User {
@@ -64,6 +72,34 @@ export default function UsersPage() {
 
   const [showFilters, setShowFilters] = useState(false);
   const queryClient = useQueryClient();
+
+  // Real-time Socket.IO hooks
+  const { isConnected: socketConnected, lastError: socketError } = useAdminSocket();
+  const { stats: realtimeStats } = useRealtimeStats();
+  const { activities: realtimeActivities } = useRealtimeActivity();
+  const { isHealthy: socketHealthy, startHealthCheck } = useSocketHealth();
+
+  // Start health monitoring
+  useEffect(() => {
+    const cleanup = startHealthCheck(30000);
+    return cleanup;
+  }, [startHealthCheck]);
+
+  // Notify when switching to real-time mode
+  useEffect(() => {
+    if (socketConnected && socketHealthy) {
+      toast.success('📡 Real-time user monitoring enabled');
+    } else if (socketError) {
+      toast.warning('⚠️ User page switched to polling mode');
+    }
+  }, [socketConnected, socketHealthy, socketError]);
+
+  // Auto-refresh user list when real-time updates occur
+  useEffect(() => {
+    if (realtimeActivities?.some(activity => activity.action.includes('user') || activity.action.includes('User'))) {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+    }
+  }, [realtimeActivities, queryClient]);
 
   // Fetch users data
   const { data: usersData, isLoading, error, refetch } = useQuery<UsersResponse>({
@@ -174,10 +210,37 @@ export default function UsersPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center">
-              <Users className="h-8 w-8 mr-3 text-blue-600" />
-              All Users
-            </h1>
+            <div className="flex items-center space-x-3">
+              <h1 className="text-3xl font-bold text-gray-900 flex items-center">
+                <Users className="h-8 w-8 mr-3 text-blue-600" />
+                All Users
+              </h1>
+              {/* Real-time Connection Status */}
+              <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${
+                socketConnected 
+                  ? 'bg-green-100 text-green-700' 
+                  : 'bg-yellow-100 text-yellow-700'
+              }`}>
+                {socketConnected ? (
+                  <>
+                    <Wifi className="h-3 w-3" />
+                    <span>Live Monitoring</span>
+                  </>
+                ) : (
+                  <>
+                    <WifiOff className="h-3 w-3" />
+                    <span>Manual Updates</span>
+                  </>
+                )}
+              </div>
+              {/* Real-time activity indicator */}
+              {realtimeActivities?.some(activity => activity.action.toLowerCase().includes('user')) && (
+                <div className="flex items-center space-x-1 px-2 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
+                  <Activity className="h-3 w-3" />
+                  <span>User Activity</span>
+                </div>
+              )}
+            </div>
             <p className="text-gray-600 mt-1">
               Manage all registered users in the system
             </p>

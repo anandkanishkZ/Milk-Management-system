@@ -9,6 +9,8 @@ import {
   CustomerBalance
 } from '@/types';
 import prisma from '@/database/client';
+import jwt from 'jsonwebtoken';
+import config from '@/config';
 
 interface AuthenticatedSocket extends Socket {
   user?: AuthUser;
@@ -28,21 +30,61 @@ const authenticateSocket = async (socket: AuthenticatedSocket, next: (err?: Erro
       return next(new Error('Authentication token required'));
     }
 
-    // Verify JWT token
-    const { userId } = AuthService.verifyAccessToken(token);
-    
-    // Get user details
-    const user = await AuthService.getUserById(userId);
-    if (!user) {
-      return next(new Error('User not found'));
-    }
+    // Verify JWT token (handle both admin and user tokens)
+    let userId: string;
+    let tokenType: string;
+    let user: any;
 
-    // Attach user to socket
-    socket.user = user;
-    next();
+    try {
+      // Try to decode the token first to check its type
+      const decoded = jwt.verify(token, config.jwtSecret as string) as any;
+      tokenType = decoded.type;
+      userId = decoded.userId;
+
+      if (tokenType === 'admin') {
+        // Handle admin token
+        user = await prisma.adminUser.findUnique({
+          where: { id: userId },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            isActive: true
+          }
+        });
+        
+        if (!user || !user.isActive) {
+          return next(new Error('Admin user not found or inactive'));
+        }
+        
+        // Mark as admin user
+        user.userType = 'admin';
+      } else if (tokenType === 'access') {
+        // Handle regular user token
+        const { userId: verifiedUserId } = AuthService.verifyAccessToken(token);
+        user = await AuthService.getUserById(verifiedUserId);
+        
+        if (!user) {
+          return next(new Error('User not found'));
+        }
+        
+        // Mark as regular user
+        user.userType = 'user';
+      } else {
+        return next(new Error('Invalid token type'));
+      }
+
+      // Attach user to socket
+      socket.user = user;
+      next();
+    } catch (jwtError) {
+      console.error('JWT verification error:', jwtError);
+      return next(new Error('Invalid authentication token'));
+    }
   } catch (error: any) {
     console.error('Socket authentication error:', error);
-    next(new Error('Invalid authentication token'));
+    next(new Error('Authentication failed'));
   }
 };
 
@@ -73,25 +115,89 @@ const logSocketActivity = async (
 };
 
 /**
+ * Log activity through socket events (with user type check)
+ */
+const logUserActivity = async (
+  user: any,
+  action: string, 
+  entityType: string, 
+  description: string,
+  metadata?: Record<string, any>
+) => {
+  // Only log activity for regular users, not admin users
+  if (user.userType !== 'admin') {
+    await logSocketActivity(user.id, action, entityType, description, metadata);
+  }
+};
+
+/**
+ * Get real-time statistics for admin dashboard (system-wide)
+ */
+const getAdminRealtimeStats = async (): Promise<any> => {
+  try {
+    // Get system-wide stats (same as dashboard endpoint)
+    const [
+      totalUsers,
+      activeUsers,
+      totalCustomers,
+      activeCustomers,
+      totalVendors,
+      totalPayments
+    ] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({ where: { isActive: true } }),
+      prisma.customer.count(),
+      prisma.customer.count({ where: { isActive: true } }),
+      prisma.user.count({ where: { customers: { some: {} } } }),
+      prisma.payment.aggregate({ _sum: { amount: true }, _count: true })
+    ]);
+
+    return {
+      totalUsers,
+      activeUsers,
+      totalVendors,
+      activeVendors: totalVendors,
+      totalCustomers,
+      activeCustomers,
+      totalRevenue: Number(totalPayments._sum.amount || 0),
+      monthlyRevenue: Math.round(Number(totalPayments._sum.amount || 0) * 0.2),
+      totalOrders: totalPayments._count || 0,
+      averageOrderValue: totalPayments._count > 0 ? Math.round(Number(totalPayments._sum.amount || 0) / totalPayments._count) : 0,
+    };
+  } catch (error) {
+    console.error('Failed to get admin realtime stats:', error);
+    return {};
+  }
+};
+
+/**
  * Get real-time statistics for dashboard
  */
 const getRealtimeStats = async (userId: string): Promise<Partial<ReportStats>> => {
   try {
-    // Get today's stats
-    const today = new Date().toISOString().split('T')[0];
+    // Get today's stats using proper date range
+    const today = new Date();
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
     
     const [todayEntries, todayPayments, customers] = await Promise.all([
       prisma.dailyEntry.findMany({
         where: {
           userId,
-          entryDate: today
+          entryDate: {
+            gte: startOfDay,
+            lt: endOfDay
+          }
         },
         include: { customer: true }
       }),
       prisma.payment.findMany({
         where: {
           userId,
-          paymentDate: today
+          paymentDate: {
+            gte: startOfDay,
+            lt: endOfDay
+          }
         }
       }),
       prisma.customer.findMany({
@@ -138,15 +244,17 @@ export const setupSocketHandlers = (io: Server) => {
     socket.join(`user:${user.id}`);
 
     // Log connection activity
-    await logSocketActivity(
-      user.id,
+    await logUserActivity(
+      user,
       'CONNECTION_ESTABLISHED',
       'SYSTEM',
       'User connected via WebSocket'
     );
 
     // Send initial real-time stats
-    const initialStats = await getRealtimeStats(user.id);
+    const initialStats = user.userType === 'admin' 
+      ? await getAdminRealtimeStats() 
+      : await getRealtimeStats(user.id);
     socket.emit('stats:updated', initialStats);
 
     // Handle delivery updates
@@ -178,8 +286,8 @@ export const setupSocketHandlers = (io: Server) => {
         });
 
         // Log activity
-        await logSocketActivity(
-          user.id,
+        await logUserActivity(
+          user,
           'DAILY_ENTRY_UPDATED',
           'DAILY_ENTRY',
           `Updated delivery for ${updatedEntry.customer?.name}: ${Number(updatedEntry.quantity)}L`,
@@ -190,7 +298,9 @@ export const setupSocketHandlers = (io: Server) => {
         io.to(`user:${user.id}`).emit('delivery:updated', updatedEntry);
 
         // Send updated stats
-        const stats = await getRealtimeStats(user.id);
+        const stats = user.userType === 'admin' 
+          ? await getAdminRealtimeStats() 
+          : await getRealtimeStats(user.id);
         io.to(`user:${user.id}`).emit('stats:updated', stats);
 
         console.log(`� Delivery updated for user ${user.email}: ${updatedEntry.customer?.name}`);
@@ -216,8 +326,8 @@ export const setupSocketHandlers = (io: Server) => {
         });
 
         // Log activity
-        await logSocketActivity(
-          user.id,
+        await logUserActivity(
+          user,
           'PAYMENT_ADDED',
           'PAYMENT',
           `Payment received from ${payment.customer?.name}: ₹${payment.amount}`,
@@ -251,7 +361,9 @@ export const setupSocketHandlers = (io: Server) => {
         io.to(`user:${user.id}`).emit('balance:updated', balance);
 
         // Send updated stats
-        const stats = await getRealtimeStats(user.id);
+        const stats = user.userType === 'admin' 
+          ? await getAdminRealtimeStats() 
+          : await getRealtimeStats(user.id);
         io.to(`user:${user.id}`).emit('stats:updated', stats);
 
         console.log(`💰 Payment added for user ${user.email}: ${payment.customer?.name} - ₹${payment.amount}`);
@@ -277,8 +389,8 @@ export const setupSocketHandlers = (io: Server) => {
         });
 
         // Log activity
-        await logSocketActivity(
-          user.id,
+        await logUserActivity(
+          user,
           'CUSTOMER_UPDATED',
           'CUSTOMER',
           `Customer updated: ${updatedCustomer.name}`,
@@ -299,7 +411,9 @@ export const setupSocketHandlers = (io: Server) => {
     // Handle real-time stats requests
     socket.on('stats:request', async () => {
       try {
-        const stats = await getRealtimeStats(user.id);
+        const stats = user.userType === 'admin' 
+          ? await getAdminRealtimeStats() 
+          : await getRealtimeStats(user.id);
         socket.emit('stats:updated', stats);
       } catch (error: any) {
         console.error('Stats request error:', error);
@@ -336,8 +450,8 @@ export const setupSocketHandlers = (io: Server) => {
       activeUsers.delete(user.id);
 
       // Log disconnection activity
-      await logSocketActivity(
-        user.id,
+      await logUserActivity(
+        user,
         'CONNECTION_CLOSED',
         'SYSTEM',
         `User disconnected via WebSocket: ${reason}`

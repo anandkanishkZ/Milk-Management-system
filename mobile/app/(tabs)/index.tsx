@@ -1,23 +1,39 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useData } from '@/context/DataContext';
 import { getTodayString } from '@/utils/date';
-import { Users, Calendar, Wallet, CircleAlert as AlertCircle, TrendingUp } from 'lucide-react-native';
+import { Users, Calendar, Wallet, CircleAlert as AlertCircle, TrendingUp, Wifi, WifiOff } from 'lucide-react-native';
+import { useUserSocket, useRealtimeStats, useRealtimeActivity, useRealtimeNotifications } from '@/hooks/useSocket';
 
 export default function HomeScreen() {
   console.log('🏠 HomeScreen rendering...');
   const router = useRouter();
   const { customers, dailyEntries, payments, loading, getCustomerBalance } = useData();
 
+  // Socket.IO hooks for real-time data
+  const { isConnected, reconnect } = useUserSocket();
+  const { stats: realtimeStats, lastUpdate, requestUpdate } = useRealtimeStats();
+  const { activities } = useRealtimeActivity();
+  const { notifications, unreadCount } = useRealtimeNotifications();
+
   console.log('📊 HomeScreen data state:', { 
     customers: customers.length, 
     dailyEntries: dailyEntries.length, 
     payments: payments.length, 
-    loading 
+    loading,
+    socketConnected: isConnected,
+    realtimeStats: !!realtimeStats
   });
+
+  // Request real-time stats on mount
+  useEffect(() => {
+    if (isConnected) {
+      requestUpdate();
+    }
+  }, [isConnected, requestUpdate]);
 
   const todayString = getTodayString();
 
@@ -51,6 +67,28 @@ export default function HomeScreen() {
     };
   }, [customers, dailyEntries, payments, todayString, getCustomerBalance]);
 
+  // Use real-time stats when available, fallback to calculated stats
+  const displayStats = useMemo(() => {
+    if (realtimeStats && isConnected) {
+      return {
+        activeCustomers: realtimeStats.activeCustomers || 0,
+        todayLiters: (realtimeStats.todayDeliveries || 0).toString(),
+        todayAmount: (realtimeStats.todayRevenue || 0).toFixed(2),
+        todayCollection: (realtimeStats.todayRevenue || 0).toFixed(2),
+        totalOutstanding: (realtimeStats.totalBalance || 0).toFixed(2),
+        customersWithDues: realtimeStats.pendingPayments || 0,
+      };
+    }
+    return stats || {
+      activeCustomers: 0,
+      todayLiters: '0.0',
+      todayAmount: '0.00',
+      todayCollection: '0.00',
+      totalOutstanding: '0.00',
+      customersWithDues: 0,
+    };
+  }, [realtimeStats, stats, isConnected]);
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -63,8 +101,26 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar style="light" backgroundColor="#2563eb" />
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Milk Delivery Manager</Text>
-        <Text style={styles.headerSubtitle}>Dashboard</Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.headerTitle}>Milk Delivery Manager</Text>
+          <Text style={styles.headerSubtitle}>Dashboard</Text>
+        </View>
+        <View style={styles.headerRight}>
+          {/* Connection Status Indicator */}
+          <TouchableOpacity onPress={reconnect} style={styles.connectionIndicator}>
+            {isConnected ? (
+              <Wifi size={20} color="#22c55e" />
+            ) : (
+              <WifiOff size={20} color="#ef4444" />
+            )}
+          </TouchableOpacity>
+          {/* Notifications Badge */}
+          {unreadCount > 0 && (
+            <View style={styles.notificationBadge}>
+              <Text style={styles.notificationCount}>{unreadCount}</Text>
+            </View>
+          )}
+        </View>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -76,7 +132,7 @@ export default function HomeScreen() {
               <View style={styles.statIconContainer}>
                 <TrendingUp size={24} color="#2563eb" />
               </View>
-              <Text style={styles.statValue}>{stats.todayLiters} L</Text>
+              <Text style={styles.statValue}>{displayStats.todayLiters} L</Text>
               <Text style={styles.statLabel}>Milk Delivered</Text>
             </View>
 
@@ -84,7 +140,7 @@ export default function HomeScreen() {
               <View style={styles.statIconContainer}>
                 <Wallet size={24} color="#16a34a" />
               </View>
-              <Text style={styles.statValue}>₹{stats.todayAmount}</Text>
+              <Text style={styles.statValue}>₹{displayStats.todayAmount}</Text>
               <Text style={styles.statLabel}>Today's Sales</Text>
             </View>
           </View>
@@ -94,7 +150,7 @@ export default function HomeScreen() {
               <View style={styles.statIconContainer}>
                 <Wallet size={24} color="#059669" />
               </View>
-              <Text style={styles.statValue}>₹{stats.todayCollection}</Text>
+              <Text style={styles.statValue}>₹{displayStats.todayCollection}</Text>
               <Text style={styles.statLabel}>Collected</Text>
             </View>
 
@@ -102,7 +158,7 @@ export default function HomeScreen() {
               <View style={styles.statIconContainer}>
                 <Users size={24} color="#7c3aed" />
               </View>
-              <Text style={styles.statValue}>{stats.activeCustomers}</Text>
+              <Text style={styles.statValue}>{displayStats.activeCustomers}</Text>
               <Text style={styles.statLabel}>Active Customers</Text>
             </View>
           </View>
@@ -114,10 +170,40 @@ export default function HomeScreen() {
             <View style={styles.statIconContainer}>
               <AlertCircle size={24} color="#dc2626" />
             </View>
-            <Text style={[styles.statValue, styles.outstandingValue]}>₹{stats.totalOutstanding}</Text>
-            <Text style={styles.statLabel}>{stats.customersWithDues} customers have pending dues</Text>
+            <Text style={[styles.statValue, styles.outstandingValue]}>₹{displayStats.totalOutstanding}</Text>
+            <Text style={styles.statLabel}>{displayStats.customersWithDues} customers have pending dues</Text>
           </View>
         </View>
+
+        {/* Real-time Activity Feed */}
+        {activities.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Recent Activity</Text>
+              <View style={styles.realtimeBadge}>
+                <Text style={styles.realtimeBadgeText}>Live</Text>
+              </View>
+            </View>
+            
+            <View style={styles.activityList}>
+              {activities.slice(0, 3).map((activity, index) => (
+                <View key={activity.id || index} style={styles.activityItem}>
+                  <View style={styles.activityIcon}>
+                    {activity.type === 'payment' && <Wallet size={16} color="#22c55e" />}
+                    {activity.type === 'delivery' && <TrendingUp size={16} color="#3b82f6" />}
+                    {activity.type === 'customer' && <Users size={16} color="#8b5cf6" />}
+                  </View>
+                  <View style={styles.activityContent}>
+                    <Text style={styles.activityText}>{activity.description}</Text>
+                    <Text style={styles.activityTime}>
+                      {lastUpdate ? `${Math.floor((new Date().getTime() - lastUpdate.getTime()) / 60000)}m ago` : 'Just now'}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -168,6 +254,17 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingHorizontal: 20,
     paddingBottom: 24,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  headerLeft: {
+    flex: 1,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   headerTitle: {
     fontSize: 28,
@@ -253,5 +350,75 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#111827',
+  },
+  connectionIndicator: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  notificationBadge: {
+    backgroundColor: '#ef4444',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
+  notificationCount: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  realtimeBadge: {
+    backgroundColor: '#22c55e',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  realtimeBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  activityList: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  activityItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  activityIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f3f4f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  activityContent: {
+    flex: 1,
+  },
+  activityText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  activityTime: {
+    fontSize: 12,
+    color: '#6b7280',
   },
 });

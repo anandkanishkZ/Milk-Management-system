@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApiService } from '@/lib/api';
 import AdminLayout from '@/components/AdminLayout';
 import { 
@@ -16,9 +16,19 @@ import {
   RefreshCw,
   Download,
   Calendar,
-  Eye
+  Eye,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { 
+  useAdminSocket, 
+  useRealtimeStats, 
+  useRealtimeDeliveries, 
+  useRealtimePayments,
+  useRealtimeActivity,
+  useSocketHealth 
+} from '@/hooks/useSocket';
 
 // Types
 interface DashboardStats {
@@ -53,15 +63,54 @@ export default function DashboardPage() {
     from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     to: new Date().toISOString().split('T')[0]
   });
+  const queryClient = useQueryClient();
 
-  // Fetch dashboard data
-  const { data: stats, isLoading, error, refetch } = useQuery({
+  // Real-time Socket.IO hooks
+  const { isConnected: socketConnected, lastError: socketError } = useAdminSocket();
+  const { stats: realtimeStats, lastUpdate: statsLastUpdate } = useRealtimeStats();
+  const { lastDelivery } = useRealtimeDeliveries();
+  const { lastPayment } = useRealtimePayments();
+  const { activities: realtimeActivities } = useRealtimeActivity();
+  const { isHealthy: socketHealthy, startHealthCheck } = useSocketHealth();
+
+  // Start health monitoring
+  useEffect(() => {
+    const cleanup = startHealthCheck(30000); // Check every 30 seconds
+    return cleanup;
+  }, [startHealthCheck]);
+
+  // Notify when switching to real-time mode
+  useEffect(() => {
+    if (socketConnected && socketHealthy) {
+      toast.success('📡 Real-time dashboard enabled');
+    } else if (socketError) {
+      toast.warning('⚠️ Dashboard switched to polling mode - real-time updates unavailable');
+    }
+  }, [socketConnected, socketHealthy, socketError]);
+
+  // Fetch dashboard data with smart polling (only when socket disconnected)
+  const { data: apiStats, isLoading, error, refetch } = useQuery({
     queryKey: ['dashboard-stats', dateRange],
     queryFn: () => adminApiService.getDashboardStats(dateRange),
-    refetchInterval: 30000, // Refetch every 30 seconds
-    retry: false, // Don't retry on failure
+    refetchInterval: socketConnected ? false : 60000, // Only poll if socket disconnected
+    refetchIntervalInBackground: false,
+    enabled: true, // Always enable to get initial data
+    retry: 3, // Retry on failure
     refetchOnWindowFocus: false, // Don't refetch on window focus
   });
+
+  // Use real-time stats if available and has data, otherwise fallback to API stats
+  const stats = (realtimeStats && Object.keys(realtimeStats).length > 0) ? realtimeStats : apiStats;
+
+  // Auto-refresh when real-time updates occur
+  useEffect(() => {
+    if (lastDelivery || lastPayment) {
+      // Only refetch if we're using API stats (socket disconnected)
+      if (!socketConnected) {
+        refetch();
+      }
+    }
+  }, [lastDelivery, lastPayment, socketConnected, refetch]);
 
   const handleExport = async () => {
     try {
@@ -116,7 +165,32 @@ export default function DashboardPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+            <div className="flex items-center space-x-3">
+              <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+              {/* Real-time Connection Status */}
+              <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${
+                socketConnected 
+                  ? 'bg-green-100 text-green-700' 
+                  : 'bg-yellow-100 text-yellow-700'
+              }`}>
+                {socketConnected ? (
+                  <>
+                    <Wifi className="h-3 w-3" />
+                    <span>Live</span>
+                  </>
+                ) : (
+                  <>
+                    <WifiOff className="h-3 w-3" />
+                    <span>Polling</span>
+                  </>
+                )}
+              </div>
+              {statsLastUpdate && (
+                <div className="text-xs text-gray-500">
+                  Updated {new Date(statsLastUpdate).toLocaleTimeString()}
+                </div>
+              )}
+            </div>
             <p className="text-gray-600 mt-1">
               Welcome to your admin dashboard overview
             </p>
@@ -319,7 +393,15 @@ export default function DashboardPage() {
               {/* Recent Activity */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
+                  <div className="flex items-center space-x-2">
+                    <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
+                    {socketConnected && (
+                      <div className="flex items-center space-x-1 px-2 py-1 rounded-full bg-green-100 text-green-700 text-xs font-medium">
+                        <Activity className="h-3 w-3" />
+                        <span>Live</span>
+                      </div>
+                    )}
+                  </div>
                   <button className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center">
                     <Eye className="h-4 w-4 mr-1" />
                     View All
@@ -327,22 +409,49 @@ export default function DashboardPage() {
                 </div>
                 
                 <div className="space-y-4">
-                  {stats?.recentActivity?.slice(0, 5).map((activity: any) => (
+                  {/* Show real-time activities first, then fallback to API */}
+                  {(realtimeActivities?.slice(0, 5) || stats?.recentActivity?.slice(0, 5))?.map((activity: any) => (
                     <div key={activity.id} className="flex items-start space-x-3">
-                      <div className="w-2 h-2 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
+                      <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${
+                        realtimeActivities?.includes(activity) ? 'bg-green-500' : 'bg-blue-600'
+                      }`}></div>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm text-gray-900">
                           <span className="font-medium">{activity.user}</span> {activity.action}
                         </div>
                         <div className="text-xs text-gray-500 mt-1">{activity.details}</div>
-                        <div className="text-xs text-gray-400 mt-1">
-                          {new Date(activity.timestamp).toLocaleString()}
+                        <div className="text-xs text-gray-400 mt-1 flex items-center space-x-2">
+                          <span>{new Date(activity.timestamp).toLocaleString()}</span>
+                          {realtimeActivities?.includes(activity) && (
+                            <span className="text-green-500 font-medium">• Live</span>
+                          )}
                         </div>
                       </div>
                     </div>
                   )) || (
                     <div className="text-center py-8 text-gray-500">
                       No recent activity
+                    </div>
+                  )}
+                  
+                  {/* Real-time update indicators */}
+                  {lastDelivery && (
+                    <div className="border-t pt-4">
+                      <div className="flex items-center space-x-2 text-sm text-green-600">
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                        <span>New delivery: {lastDelivery.customer?.name} - {lastDelivery.quantity}L</span>
+                        <span className="text-xs text-gray-400">Just now</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {lastPayment && (
+                    <div className="border-t pt-4">
+                      <div className="flex items-center space-x-2 text-sm text-blue-600">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                        <span>New payment: ₹{lastPayment.amount} from {lastPayment.customer?.name}</span>
+                        <span className="text-xs text-gray-400">Just now</span>
+                      </div>
                     </div>
                   )}
                 </div>

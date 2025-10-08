@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
   TrendingUp,
   Users,
@@ -14,10 +14,20 @@ import {
   PieChart,
   Activity,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { adminApiService } from '@/lib/api';
 import AdminLayout from '@/components/AdminLayout';
+import { 
+  useAdminSocket, 
+  useRealtimeStats, 
+  useRealtimeDeliveries, 
+  useRealtimePayments,
+  useSocketHealth 
+} from '@/hooks/useSocket';
+import { toast } from 'react-toastify';
 
 // Types for analytics data based on API response
 interface OverviewAnalytics {
@@ -111,6 +121,36 @@ export default function AnalyticsPage() {
   const [filters, setFilters] = useState<AnalyticsFilters>({
     type: 'overview'
   });
+  const queryClient = useQueryClient();
+
+  // Real-time Socket.IO hooks
+  const { isConnected: socketConnected, lastError: socketError } = useAdminSocket();
+  const { stats: realtimeStats, lastUpdate: statsLastUpdate } = useRealtimeStats();
+  const { lastDelivery } = useRealtimeDeliveries();
+  const { lastPayment } = useRealtimePayments();
+  const { isHealthy: socketHealthy, startHealthCheck } = useSocketHealth();
+
+  // Start health monitoring
+  useEffect(() => {
+    const cleanup = startHealthCheck(30000);
+    return cleanup;
+  }, [startHealthCheck]);
+
+  // Notify when switching to real-time mode
+  useEffect(() => {
+    if (socketConnected && socketHealthy) {
+      toast.success('📊 Real-time analytics enabled');
+    } else if (socketError) {
+      toast.warning('⚠️ Analytics switched to polling mode');
+    }
+  }, [socketConnected, socketHealthy, socketError]);
+
+  // Auto-refresh analytics when real-time updates occur
+  useEffect(() => {
+    if (lastDelivery || lastPayment) {
+      queryClient.invalidateQueries({ queryKey: ['admin-analytics'] });
+    }
+  }, [lastDelivery, lastPayment, queryClient]);
 
   // Fetch analytics data using React Query
   const { data: analyticsData, isLoading, error, refetch } = useQuery({
@@ -173,7 +213,33 @@ export default function AnalyticsPage() {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Analytics Dashboard</h1>
+              <div className="flex items-center space-x-3">
+                <h1 className="text-2xl font-bold text-gray-900">Analytics Dashboard</h1>
+                {/* Real-time Connection Status */}
+                <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${
+                  socketConnected 
+                    ? 'bg-green-100 text-green-700' 
+                    : 'bg-yellow-100 text-yellow-700'
+                }`}>
+                  {socketConnected ? (
+                    <>
+                      <BarChart3 className="h-3 w-3" />
+                      <span>Live Analytics</span>
+                    </>
+                  ) : (
+                    <>
+                      <WifiOff className="h-3 w-3" />
+                      <span>Static Data</span>
+                    </>
+                  )}
+                </div>
+                {/* Real-time update timestamp */}
+                {statsLastUpdate && socketConnected && (
+                  <div className="text-xs text-gray-500">
+                    Updated {new Date(statsLastUpdate).toLocaleTimeString()}
+                  </div>
+                )}
+              </div>
               <p className="text-sm text-gray-500 mt-1">
                 Business insights and performance metrics
               </p>

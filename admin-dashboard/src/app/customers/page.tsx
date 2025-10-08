@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
   Search, 
   Filter, 
@@ -14,10 +14,22 @@ import {
   Calendar,
   DollarSign,
   TrendingUp,
-  MoreHorizontal
+  MoreHorizontal,
+  Wifi,
+  WifiOff,
+  Activity
 } from 'lucide-react';
 import { adminApiService } from '@/lib/api';
 import AdminLayout from '@/components/AdminLayout';
+import { 
+  useAdminSocket, 
+  useRealtimeStats, 
+  useRealtimeDeliveries, 
+  useRealtimePayments,
+  useRealtimeCustomers,
+  useSocketHealth 
+} from '@/hooks/useSocket';
+import { toast } from 'react-toastify';
 
 // Types
 interface Customer {
@@ -112,6 +124,36 @@ export default function AllCustomersPage() {
     status: 'all',
     paymentStatus: 'all'
   });
+  const queryClient = useQueryClient();
+
+  // Real-time Socket.IO hooks
+  const { isConnected: socketConnected, lastError: socketError } = useAdminSocket();
+  const { lastCustomerUpdate } = useRealtimeCustomers();
+  const { lastPayment } = useRealtimePayments();
+  const { lastDelivery } = useRealtimeDeliveries();
+  const { isHealthy: socketHealthy, startHealthCheck } = useSocketHealth();
+
+  // Start health monitoring
+  useEffect(() => {
+    const cleanup = startHealthCheck(30000);
+    return cleanup;
+  }, [startHealthCheck]);
+
+  // Notify when switching to real-time mode
+  useEffect(() => {
+    if (socketConnected && socketHealthy) {
+      toast.success('📡 Real-time customer updates enabled');
+    } else if (socketError) {
+      toast.warning('⚠️ Customer page switched to polling mode');
+    }
+  }, [socketConnected, socketHealthy, socketError]);
+
+  // Auto-refresh customer list when real-time updates occur
+  useEffect(() => {
+    if (lastCustomerUpdate || lastPayment || lastDelivery) {
+      queryClient.invalidateQueries({ queryKey: ['admin-customers'] });
+    }
+  }, [lastCustomerUpdate, lastPayment, lastDelivery, queryClient]);
 
   // Fetch customers data using React Query
   const { data: customersData, isLoading, error, refetch } = useQuery<Customer[]>({
@@ -209,7 +251,34 @@ export default function AllCustomersPage() {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">All Customers</h1>
+              <div className="flex items-center space-x-3">
+                <h1 className="text-2xl font-bold text-gray-900">All Customers</h1>
+                {/* Real-time Connection Status */}
+                <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${
+                  socketConnected 
+                    ? 'bg-green-100 text-green-700' 
+                    : 'bg-yellow-100 text-yellow-700'
+                }`}>
+                  {socketConnected ? (
+                    <>
+                      <Wifi className="h-3 w-3" />
+                      <span>Live Updates</span>
+                    </>
+                  ) : (
+                    <>
+                      <WifiOff className="h-3 w-3" />
+                      <span>Manual Refresh</span>
+                    </>
+                  )}
+                </div>
+                {/* Real-time update indicators */}
+                {lastCustomerUpdate && (
+                  <div className="flex items-center space-x-1 px-2 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
+                    <Activity className="h-3 w-3" />
+                    <span>Customer Updated</span>
+                  </div>
+                )}
+              </div>
               <p className="text-sm text-gray-500 mt-1">
                 {customers.length} customers
               </p>

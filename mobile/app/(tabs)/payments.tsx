@@ -15,12 +15,19 @@ import { useState, useEffect } from 'react';
 import { useData } from '@/context/DataContext';
 import { Customer, Payment } from '@/types';
 import { getTodayString, formatDisplayDate } from '@/utils/date';
-import { Wallet, Plus, X, Check, Trash2, Shield } from 'lucide-react-native';
+import { Wallet, Plus, X, Check, Trash2, Shield, Wifi, WifiOff } from 'lucide-react-native';
+import { useUserSocket, useRealtimePayments, useRealtimeNotifications } from '@/hooks/useSocket';
 import SecurityPinModal from '@/components/SecurityPinModal';
 // Security PIN handled by SecurityPinModal component
 
 export default function PaymentsScreen() {
   const { customers, payments, addPayment, deletePayment, getCustomerBalance, getCustomerPayments } = useData();
+  
+  // Socket.IO hooks for real-time payment updates
+  const { isConnected, reconnect } = useUserSocket();
+  const { lastPayment, addPayment: socketAddPayment } = useRealtimePayments();
+  const { notifications, unreadCount } = useRealtimeNotifications();
+  
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
@@ -186,7 +193,28 @@ export default function PaymentsScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar style="light" backgroundColor="#2563eb" />
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Payments</Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.headerTitle}>Payments</Text>
+          <Text style={styles.headerSubtitle}>
+            ₹{todayTotal.toFixed(2)} collected today • {isConnected ? 'Live updates' : 'Offline mode'}
+          </Text>
+        </View>
+        <View style={styles.headerRight}>
+          {/* Connection Status Indicator */}
+          <TouchableOpacity onPress={reconnect} style={styles.connectionIndicator}>
+            {isConnected ? (
+              <Wifi size={20} color="#22c55e" />
+            ) : (
+              <WifiOff size={20} color="#ef4444" />
+            )}
+          </TouchableOpacity>
+          {/* Notifications Badge */}
+          {unreadCount > 0 && (
+            <View style={styles.notificationBadge}>
+              <Text style={styles.notificationCount}>{unreadCount}</Text>
+            </View>
+          )}
+        </View>
       </View>
 
       <View style={styles.todaySummary}>
@@ -437,11 +465,46 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingHorizontal: 20,
     paddingBottom: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  headerLeft: {
+    flex: 1,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
     color: '#fff',
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#dbeafe',
+  },
+  connectionIndicator: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  notificationBadge: {
+    backgroundColor: '#ef4444',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
+  notificationCount: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   todaySummary: {
     flexDirection: 'row',

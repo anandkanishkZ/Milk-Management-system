@@ -16,12 +16,19 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useState, useMemo, useEffect } from 'react';
 import { useData } from '@/context/DataContext';
 import { getTodayString, formatDisplayDate, getWeekDayIndex, isDateInFuture, isDateToday } from '@/utils/date';
-import { Calendar, ChevronLeft, ChevronRight, Plus, Minus, Check, AlertTriangle, Shield, Edit3, Trash2 } from 'lucide-react-native';
+import { Calendar, ChevronLeft, ChevronRight, Plus, Minus, Check, AlertTriangle, Shield, Edit3, Trash2, Wifi, WifiOff } from 'lucide-react-native';
+import { useUserSocket, useRealtimeDeliveries, useRealtimeNotifications } from '@/hooks/useSocket';
 import SecurityPinModal from '@/components/SecurityPinModal';
 // Security PIN handled by SecurityPinModal component
 
 export default function DailyScreen() {
   const { customers, dailyEntries, addDailyEntry, updateDailyEntry, deleteDailyEntry, loading } = useData();
+  
+  // Socket.IO hooks for real-time delivery updates
+  const { isConnected, reconnect } = useUserSocket();
+  const { lastDelivery, updateDelivery } = useRealtimeDeliveries();
+  const { notifications, unreadCount } = useRealtimeNotifications();
+  
   const [selectedDate, setSelectedDate] = useState(getTodayString());
   const [saving, setSaving] = useState<string | null>(null);
   const [pinModalVisible, setPinModalVisible] = useState(false);
@@ -316,7 +323,28 @@ export default function DailyScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar style="light" backgroundColor="#2563eb" />
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Daily Entries</Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.headerTitle}>Daily Entries</Text>
+          <Text style={styles.headerSubtitle}>
+            {formatDisplayDate(selectedDate)} • {isConnected ? 'Live sync' : 'Offline mode'}
+          </Text>
+        </View>
+        <View style={styles.headerRight}>
+          {/* Connection Status Indicator */}
+          <TouchableOpacity onPress={reconnect} style={styles.connectionIndicator}>
+            {isConnected ? (
+              <Wifi size={20} color="#22c55e" />
+            ) : (
+              <WifiOff size={20} color="#ef4444" />
+            )}
+          </TouchableOpacity>
+          {/* Notifications Badge */}
+          {unreadCount > 0 && (
+            <View style={styles.notificationBadge}>
+              <Text style={styles.notificationCount}>{unreadCount}</Text>
+            </View>
+          )}
+        </View>
       </View>
 
       <View style={styles.dateSelector}>
@@ -584,11 +612,46 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingHorizontal: 20,
     paddingBottom: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  headerLeft: {
+    flex: 1,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
     color: '#fff',
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#dbeafe',
+  },
+  connectionIndicator: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  notificationBadge: {
+    backgroundColor: '#ef4444',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
+  notificationCount: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   dateSelector: {
     flexDirection: 'row',
