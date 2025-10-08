@@ -140,6 +140,13 @@ export const useRealtimePayments = () => {
     setPaymentUpdates(prev => [payment, ...prev.slice(0, 9)]); // Keep last 10
   });
 
+  useSocketEvent('payment:deleted', (deletedPayment) => {
+    // Remove deleted payment from updates list
+    setPaymentUpdates(prev => prev.filter(p => p.id !== deletedPayment.paymentId));
+    // Clear lastPayment if it's the one that was deleted
+    setLastPayment((prev: any) => prev?.id === deletedPayment.paymentId ? null : prev);
+  });
+
   const addPayment = useCallback((paymentData: any) => {
     userSocket.addPayment(paymentData);
   }, []);

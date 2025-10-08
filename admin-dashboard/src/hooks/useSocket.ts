@@ -111,15 +111,23 @@ export const useRealtimeStats = () => {
   const queryClient = useQueryClient();
 
   useSocketEvent('stats:updated', (newStats) => {
+    console.log('📊 useRealtimeStats: Received stats update:', newStats);
     setStats(newStats);
     setLastUpdate(new Date());
     
-    // Update React Query cache
+    // Update React Query cache to trigger re-renders
+    queryClient.setQueryData(['dashboard-stats'], (oldData: any) => ({
+      ...oldData,
+      ...newStats,
+    }));
     queryClient.setQueryData(['quick-stats'], newStats);
     queryClient.setQueryData(['reports-summary'], (oldData: any) => ({
       ...oldData,
       ...newStats,
     }));
+    
+    // Force invalidation to trigger fresh renders
+    queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
   });
 
   // Request initial stats
@@ -171,6 +179,17 @@ export const useRealtimePayments = () => {
     queryClient.invalidateQueries({ queryKey: ['quick-stats'] });
     
     Toast.success(`Payment received: ₹${payment.amount} from ${payment.customer?.name}`);
+  });
+
+  useSocketEvent('payment:deleted', (payment) => {
+    setLastPayment(null); // Clear last payment since it was deleted
+    
+    // Invalidate relevant queries to refresh the data
+    queryClient.invalidateQueries({ queryKey: ['recent-reports'] });
+    queryClient.invalidateQueries({ queryKey: ['quick-stats'] });
+    queryClient.invalidateQueries({ queryKey: ['payments'] }); // Also refresh payments list
+    
+    Toast.info(`Payment deleted: ₹${payment.amount} from ${payment.customerName}`);
   });
 
   return {

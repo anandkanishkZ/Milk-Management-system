@@ -1,8 +1,10 @@
 import { Router } from 'express';
-import { ApiResponse } from '@/types';
+import { ApiResponse, CustomerBalance } from '@/types';
 import prisma from '@/database/client';
 import { createPaymentSchema } from '@/utils/validation';
 import { Prisma } from '@prisma/client';
+import { getIoInstance } from '@/lib/socket';
+import { getAdminRealtimeStats } from '@/sockets/index';
 
 const router = Router();
 
@@ -207,6 +209,46 @@ router.post('/', async (req, res) => {
         userAgent: req.get('User-Agent') || null
       }
     });
+
+    // 🚀 REAL-TIME SOCKET.IO BROADCASTS
+    try {
+      const io = getIoInstance();
+      
+      // Calculate updated balance for the customer
+      const [totalBilled, totalPaid] = await Promise.all([
+        prisma.dailyEntry.aggregate({
+          where: { userId: req.user!.id, customerId: payment.customerId },
+          _sum: { amount: true }
+        }),
+        prisma.payment.aggregate({
+          where: { userId: req.user!.id, customerId: payment.customerId },
+          _sum: { amount: true }
+        })
+      ]);
+
+      const billedAmount = Number(totalBilled._sum.amount) || 0;
+      const paidAmount = Number(totalPaid._sum.amount) || 0;
+      
+      const balance: CustomerBalance = {
+        customerId: payment.customerId,
+        totalBilled: billedAmount,
+        totalPaid: paidAmount,
+        balance: billedAmount - paidAmount
+      };
+
+      // Broadcast payment to user's devices
+      io.to(`user:${req.user!.id}`).emit('payment:added', payment);
+      io.to(`user:${req.user!.id}`).emit('balance:updated', balance);
+
+      // Get updated stats for admin dashboard
+      const adminStats = await getAdminRealtimeStats();
+      io.emit('stats:updated', adminStats);
+
+      console.log(`💰 Payment broadcasted via Socket.IO: ${payment.customer.name} - ₹${payment.amount}`);
+    } catch (socketError) {
+      console.error('Failed to broadcast payment via Socket.IO:', socketError);
+      // Don't fail the request if Socket.IO fails
+    }
     
     const response: ApiResponse<any> = {
       success: true,
@@ -296,6 +338,54 @@ router.delete('/:id', async (req, res) => {
         userAgent: req.get('User-Agent') || null
       }
     });
+
+    // 🔥 Socket.IO Broadcasting for Real-time Updates
+    try {
+      const io = getIoInstance();
+      if (io) {
+        // Calculate updated customer balance after deletion
+        const balanceData = await prisma.payment.aggregate({
+          where: { customerId: existingPayment.customerId, userId: req.user!.id },
+          _sum: { amount: true }
+        });
+        
+        const deliveryData = await prisma.dailyEntry.aggregate({
+          where: { customerId: existingPayment.customerId, userId: req.user!.id },
+          _sum: { amount: true }
+        });
+
+        const totalPayments = Number(balanceData._sum?.amount) || 0;
+        const totalDeliveryAmount = Number(deliveryData._sum?.amount) || 0;
+        const balance = totalDeliveryAmount - totalPayments;
+
+        // Emit payment deletion event to specific user
+        io.to(`user:${req.user!.id}`).emit('payment:deleted', {
+          paymentId: existingPayment.id,
+          customerId: existingPayment.customerId,
+          customerName: existingPayment.customer.name,
+          amount: Number(existingPayment.amount),
+          method: existingPayment.method,
+          paymentDate: existingPayment.paymentDate,
+          updatedBalance: balance,
+          timestamp: new Date()
+        });
+
+        // Broadcast updated admin stats to all connected clients
+        const adminStats = await getAdminRealtimeStats();
+        io.emit('stats:updated', {
+          ...adminStats,
+          timestamp: new Date(),
+          type: 'payment_deleted'
+        });
+
+        console.log('✅ Socket.IO: Payment deletion broadcasted successfully');
+      } else {
+        console.log('⚠️ Socket.IO: Instance not available for payment deletion broadcast');
+      }
+    } catch (socketError) {
+      console.error('❌ Socket.IO: Payment deletion broadcast failed:', socketError);
+      // Don't fail the API response due to socket error
+    }
     
     const response: ApiResponse = {
       success: true,

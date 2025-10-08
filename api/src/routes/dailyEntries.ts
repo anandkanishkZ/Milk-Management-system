@@ -3,6 +3,8 @@ import { ApiResponse } from '@/types';
 import prisma from '@/database/client';
 import { createDailyEntrySchema, updateDailyEntrySchema } from '@/utils/validation';
 import { Prisma } from '@prisma/client';
+import { getIoInstance } from '@/lib/socket';
+import { getAdminRealtimeStats } from '@/sockets/index';
 
 const router = Router();
 
@@ -236,6 +238,23 @@ router.post('/', async (req, res) => {
         userAgent: req.get('User-Agent') || null
       }
     });
+
+    // 🚀 REAL-TIME SOCKET.IO BROADCASTS
+    try {
+      const io = getIoInstance();
+
+      // Broadcast delivery to user's devices
+      io.to(`user:${req.user!.id}`).emit('delivery:updated', entry);
+
+      // Get updated stats for admin dashboard
+      const adminStats = await getAdminRealtimeStats();
+      io.emit('stats:updated', adminStats);
+
+      console.log(`🚚 Delivery broadcasted via Socket.IO: ${entry.customer.name} - ${entry.quantity}L`);
+    } catch (socketError) {
+      console.error('Failed to broadcast delivery via Socket.IO:', socketError);
+      // Don't fail the request if Socket.IO fails
+    }
     
     const response: ApiResponse<any> = {
       success: true,
@@ -350,6 +369,23 @@ router.put('/:id', async (req, res) => {
         userAgent: req.get('User-Agent') || null
       }
     });
+
+    // 🚀 REAL-TIME SOCKET.IO BROADCASTS
+    try {
+      const io = getIoInstance();
+
+      // Broadcast updated delivery to user's devices
+      io.to(`user:${req.user!.id}`).emit('delivery:updated', updatedEntry);
+
+      // Get updated stats for admin dashboard
+      const adminStats = await getAdminRealtimeStats();
+      io.emit('stats:updated', adminStats);
+
+      console.log(`🚚 Updated delivery broadcasted via Socket.IO: ${updatedEntry.customer.name} - ${updatedEntry.quantity}L`);
+    } catch (socketError) {
+      console.error('Failed to broadcast delivery update via Socket.IO:', socketError);
+      // Don't fail the request if Socket.IO fails
+    }
     
     const response: ApiResponse<any> = {
       success: true,

@@ -19,14 +19,40 @@ export default function HomeScreen() {
   const { activities } = useRealtimeActivity();
   const { notifications, unreadCount } = useRealtimeNotifications();
 
+  const todayString = getTodayString();
+
   console.log('📊 HomeScreen data state:', { 
     customers: customers.length, 
     dailyEntries: dailyEntries.length, 
     payments: payments.length, 
     loading,
     socketConnected: isConnected,
-    realtimeStats: !!realtimeStats
+    realtimeStats: !!realtimeStats,
+    todayString,
+    todayEntries: dailyEntries.filter((e) => e.entryDate === todayString).length,
+    todayPayments: payments.filter((p) => p.paymentDate === todayString).length
   });
+
+  // Debug: Log first few entries to check date format
+  if (dailyEntries.length > 0) {
+    console.log('📅 Sample dailyEntries dates:', dailyEntries.slice(0, 3).map(e => ({
+      id: e.id,
+      entryDate: e.entryDate,
+      todayString,
+      matches: e.entryDate === todayString
+    })));
+  }
+
+  if (payments.length > 0) {
+    console.log('💰 Sample payments dates:', payments.slice(0, 3).map(p => ({
+      id: p.id,
+      paymentDate: p.paymentDate,
+      todayString,
+      matches: p.paymentDate === todayString
+    })));
+  }
+
+  console.log('🔄 Real-time stats:', realtimeStats);
 
   // Request real-time stats on mount
   useEffect(() => {
@@ -34,8 +60,6 @@ export default function HomeScreen() {
       requestUpdate();
     }
   }, [isConnected, requestUpdate]);
-
-  const todayString = getTodayString();
 
   const stats = useMemo(() => {
     const activeCustomers = customers.filter((c) => c.isActive).length;
@@ -70,15 +94,17 @@ export default function HomeScreen() {
   // Use real-time stats when available, fallback to calculated stats
   const displayStats = useMemo(() => {
     if (realtimeStats && isConnected) {
+      console.log('🔄 Using Socket.IO real-time stats:', realtimeStats);
       return {
         activeCustomers: realtimeStats.activeCustomers || 0,
-        todayLiters: (realtimeStats.todayDeliveries || 0).toString(),
-        todayAmount: (realtimeStats.todayRevenue || 0).toFixed(2),
-        todayCollection: (realtimeStats.todayRevenue || 0).toFixed(2),
+        todayLiters: (realtimeStats.todayDeliveries || 0).toFixed(1), // ✅ Fixed: now matches API
+        todayAmount: (realtimeStats.todayRevenue || 0).toFixed(2), // ✅ Fixed: now matches API
+        todayCollection: (realtimeStats.todayCollection || 0).toFixed(2), // ✅ Fixed: use todayCollection
         totalOutstanding: (realtimeStats.totalBalance || 0).toFixed(2),
         customersWithDues: realtimeStats.pendingPayments || 0,
       };
     }
+    console.log('📊 Using local calculated stats:', stats);
     return stats || {
       activeCustomers: 0,
       todayLiters: '0.0',

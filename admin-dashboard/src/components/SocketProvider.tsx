@@ -39,11 +39,12 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   });
 
   useEffect(() => {
-    // Initialize connection
-    setSocketState(prev => ({ ...prev, connectionStatus: 'connecting' }));
+    // Initialize connection state
+    setSocketState(prev => ({ ...prev, connectionStatus: 'disconnected' }));
     
     // Setup event listeners
     const handleConnect = () => {
+      console.log('📡 SocketProvider: Connection established');
       setSocketState(prev => ({
         ...prev,
         isConnected: true,
@@ -54,6 +55,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     };
 
     const handleDisconnect = () => {
+      console.log('📡 SocketProvider: Connection lost');
       setSocketState(prev => ({
         ...prev,
         isConnected: false,
@@ -63,6 +65,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     };
 
     const handleError = (error: { message: string; code?: string }) => {
+      console.log('📡 SocketProvider: Connection error:', error);
       setSocketState(prev => ({
         ...prev,
         lastError: error.message,
@@ -75,8 +78,8 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     adminSocket.on('disconnect', handleDisconnect);
     adminSocket.on('error', handleError);
 
-    // Attempt connection
-    adminSocket.connect();
+    // Don't auto-connect here - let AuthContext handle it
+    console.log('📡 SocketProvider: Event handlers registered, waiting for authentication...');
 
     // Cleanup
     return () => {

@@ -26,12 +26,11 @@ class AdminSocketService {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private eventListeners = new Map<string, Function[]>();
+  private connectionInitialized = false;
 
   constructor() {
-    // Only connect on client-side
-    if (typeof window !== 'undefined') {
-      this.connect();
-    }
+    // Don't auto-connect in constructor
+    // Connection will be initiated when user is authenticated
   }
 
   /**
@@ -60,10 +59,12 @@ class AdminSocketService {
       }
       
       if (!token) {
-        console.warn('No admin token available for Socket.IO connection');
+        console.log('⚠️  No admin token available for Socket.IO connection - waiting for authentication');
         this.isConnecting = false;
         return;
       }
+
+      console.log('🔌 Attempting to connect Socket.IO with token...');
 
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000';
       
@@ -75,10 +76,12 @@ class AdminSocketService {
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
         timeout: 20000,
+        forceNew: true, // Force new connection to avoid cached auth issues
       });
 
       this.setupEventHandlers();
       this.reconnectAttempts = 0;
+      this.connectionInitialized = true;
 
     } catch (error) {
       console.error('Socket connection error:', error);
@@ -94,15 +97,20 @@ class AdminSocketService {
     if (!this.socket) return;
 
     this.socket.on('connect', () => {
-      console.log('✅ Admin Socket.IO connected');
+      console.log('✅ Admin Socket.IO connected successfully!');
+      console.log('🆔 Socket ID:', this.socket?.id);
       this.reconnectAttempts = 0;
       
-      // Request initial stats
-      this.emit('stats:request');
+      // Request initial stats after connection
+      setTimeout(() => {
+        console.log('📊 Requesting initial stats...');
+        this.emit('stats:request');
+      }, 500);
     });
 
     this.socket.on('disconnect', (reason) => {
       console.log('❌ Admin Socket.IO disconnected:', reason);
+      console.log('🔄 Will attempt to reconnect...');
     });
 
     this.socket.on('connect_error', (error) => {
@@ -117,22 +125,27 @@ class AdminSocketService {
 
     // Handle real-time business events
     this.socket.on('stats:updated', (data) => {
+      console.log('📊 Received stats update:', data);
       this.notifyListeners('stats:updated', data);
     });
 
     this.socket.on('delivery:updated', (data) => {
+      console.log('🚚 Received delivery update:', data);
       this.notifyListeners('delivery:updated', data);
     });
 
     this.socket.on('payment:added', (data) => {
+      console.log('💰 Received payment update:', data);
       this.notifyListeners('payment:added', data);
     });
 
     this.socket.on('customer:updated', (data) => {
+      console.log('👥 Received customer update:', data);
       this.notifyListeners('customer:updated', data);
     });
 
     this.socket.on('activity:updated', (data) => {
+      console.log('📋 Received activity update:', data);
       this.notifyListeners('activity:updated', data);
     });
 
@@ -212,6 +225,17 @@ class AdminSocketService {
       this.socket = null;
     }
     this.eventListeners.clear();
+    this.connectionInitialized = false;
+  }
+
+  /**
+   * Force reconnect with fresh token
+   */
+  async reconnectWithAuth(): Promise<void> {
+    console.log('🔄 Reconnecting Socket.IO with fresh authentication...');
+    this.disconnect();
+    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+    return this.connect();
   }
 
   /**

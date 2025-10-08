@@ -3,6 +3,7 @@ import { Customer, DailyEntry, Payment, CustomerBalance, ActivityLog } from '@/t
 import { apiService } from '@/services/api';
 import { useAuth } from './AuthContext';
 import { log, logError } from '@/config/environment';
+import { userSocket } from '@/services/socket';
 
 interface DataContextType {
   customers: Customer[];
@@ -271,6 +272,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     try {
       await apiService.deletePayment(paymentId);
       setPayments(prev => prev.filter(p => p.id !== paymentId));
+      
+      // 🔥 Notify admin dashboard via Socket.IO for real-time updates
+      userSocket.deletePayment(paymentId);
     } catch (error) {
       const isSessionExpired = await handleAuthError(error);
       if (!isSessionExpired) {

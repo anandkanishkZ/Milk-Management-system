@@ -7,6 +7,7 @@ interface ServerToClientEvents {
   'stats:updated': (stats: RealtimeStats) => void;
   'delivery:updated': (delivery: any) => void;
   'payment:added': (payment: any) => void;
+  'payment:deleted': (payment: any) => void;
   'customer:updated': (customer: any) => void;
   'balance:updated': (balance: any) => void;
   'activity:updated': (activity: any) => void;
@@ -24,6 +25,7 @@ interface ClientToServerEvents {
   'sync:request': () => void;
   'delivery:update': (data: any) => void;
   'payment:add': (data: any) => void;
+  'payment:delete': (data: any) => void;
   'customer:update': (data: any) => void;
   'ping': () => void;
 }
@@ -34,6 +36,7 @@ interface SocketEvents {
   // Server to Client
   'delivery:updated': (data: any) => void;
   'payment:added': (data: any) => void;
+  'payment:deleted': (data: any) => void;
   'customer:updated': (data: any) => void;
   'stats:updated': (data: any) => void;
   'balance:updated': (data: any) => void;
@@ -46,6 +49,7 @@ interface SocketEvents {
   // Client to Server
   'delivery:update': (data: any) => void;
   'payment:add': (data: any) => void;
+  'payment:delete': (data: any) => void;
   'customer:update': (data: any) => void;
   'stats:request': () => void;
   'activity:request': (limit: number) => void;
@@ -65,6 +69,7 @@ export interface RealtimeStats {
   activeCustomers: number;
   todayDeliveries: number;
   todayRevenue: number;
+  todayCollection: number;
   pendingPayments: number;
   totalBalance: number;
   lastUpdate: Date;
@@ -449,6 +454,13 @@ class UserSocketService {
    */
   addPayment(paymentData: any): void {
     this.emit('payment:add', paymentData);
+  }
+
+  /**
+   * Send payment deletion
+   */
+  deletePayment(paymentId: string): void {
+    this.emit('payment:delete', { paymentId });
   }
 
   /**

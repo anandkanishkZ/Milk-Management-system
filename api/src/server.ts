@@ -31,6 +31,7 @@ import { authenticateAdmin } from './middleware/adminAuth';
 
 // Import socket handlers
 import { setupSocketHandlers } from './sockets/index';
+import { setIoInstance } from './lib/socket';
 
 const app = express();
 const httpServer = createServer(app);
@@ -133,6 +134,7 @@ app.use(`${config.apiPrefix}/security-pins`, authenticate, securityPinRoutes);
 app.use(`${config.apiPrefix}/admin`, authenticateAdmin, adminRoutes);
 
 // Setup Socket.io handlers
+setIoInstance(io);
 setupSocketHandlers(io);
 
 // 404 handler

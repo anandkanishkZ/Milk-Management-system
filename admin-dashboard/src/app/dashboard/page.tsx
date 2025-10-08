@@ -29,6 +29,7 @@ import {
   useRealtimeActivity,
   useSocketHealth 
 } from '@/hooks/useSocket';
+import { adminSocket } from '@/lib/socket';
 
 // Types
 interface DashboardStats {
@@ -66,12 +67,23 @@ export default function DashboardPage() {
   const queryClient = useQueryClient();
 
   // Real-time Socket.IO hooks
-  const { isConnected: socketConnected, lastError: socketError } = useAdminSocket();
+  const { isConnected: socketConnected, lastError: socketError, requestStats } = useAdminSocket();
   const { stats: realtimeStats, lastUpdate: statsLastUpdate } = useRealtimeStats();
   const { lastDelivery } = useRealtimeDeliveries();
   const { lastPayment } = useRealtimePayments();
   const { activities: realtimeActivities } = useRealtimeActivity();
   const { isHealthy: socketHealthy, startHealthCheck } = useSocketHealth();
+
+  // Debug Socket.IO connection
+  useEffect(() => {
+    console.log('🔍 Dashboard Socket.IO State:', {
+      socketConnected,
+      socketError,
+      hasRealtimeStats: !!realtimeStats,
+      statsLastUpdate,
+      socketHealthy
+    });
+  }, [socketConnected, socketError, realtimeStats, statsLastUpdate, socketHealthy]);
 
   // Start health monitoring
   useEffect(() => {
@@ -82,11 +94,13 @@ export default function DashboardPage() {
   // Notify when switching to real-time mode
   useEffect(() => {
     if (socketConnected && socketHealthy) {
+      console.log('📡 Real-time mode enabled, stats available:', !!realtimeStats);
       toast.success('📡 Real-time dashboard enabled');
     } else if (socketError) {
+      console.log('⚠️ Falling back to polling mode');
       toast.warning('⚠️ Dashboard switched to polling mode - real-time updates unavailable');
     }
-  }, [socketConnected, socketHealthy, socketError]);
+  }, [socketConnected, socketHealthy, socketError, realtimeStats]);
 
   // Fetch dashboard data with smart polling (only when socket disconnected)
   const { data: apiStats, isLoading, error, refetch } = useQuery({
@@ -101,6 +115,17 @@ export default function DashboardPage() {
 
   // Use real-time stats if available and has data, otherwise fallback to API stats
   const stats = (realtimeStats && Object.keys(realtimeStats).length > 0) ? realtimeStats : apiStats;
+  
+  // Debug logging
+  useEffect(() => {
+    console.log('📊 Dashboard data source:', {
+      hasRealtimeStats: !!realtimeStats,
+      hasApiStats: !!apiStats,
+      socketConnected,
+      realtimeStatsKeys: realtimeStats ? Object.keys(realtimeStats) : [],
+      usingRealtime: !!(realtimeStats && Object.keys(realtimeStats).length > 0)
+    });
+  }, [realtimeStats, apiStats, socketConnected]);
 
   // Auto-refresh when real-time updates occur
   useEffect(() => {
@@ -190,6 +215,22 @@ export default function DashboardPage() {
                   Updated {new Date(statsLastUpdate).toLocaleTimeString()}
                 </div>
               )}
+              {/* Test Socket.IO Button */}
+              <button
+                onClick={() => {
+                  console.log('🧪 Testing Socket.IO connection...');
+                  if (socketConnected) {
+                    requestStats();
+                    toast.info('📊 Requested fresh stats via Socket.IO');
+                  } else {
+                    adminSocket.connect();
+                    toast.info('🔌 Attempting to connect Socket.IO');
+                  }
+                }}
+                className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition-colors"
+              >
+                {socketConnected ? '📊 Test Stats' : '🔌 Connect'}
+              </button>
             </div>
             <p className="text-gray-600 mt-1">
               Welcome to your admin dashboard overview
@@ -487,6 +528,31 @@ export default function DashboardPage() {
               <div className="font-medium text-gray-900">System Health</div>
               <div className="text-sm text-gray-500">Monitor system status</div>
             </button>
+          </div>
+        </div>
+
+        {/* Debug Panel - Remove in production */}
+        <div className="mt-8 p-4 bg-gray-50 rounded-lg">
+          <h3 className="text-sm font-medium text-gray-700 mb-2">🔍 Socket.IO Debug Info</h3>
+          <div className="grid grid-cols-2 gap-4 text-xs">
+            <div>
+              <strong>Connection:</strong> {socketConnected ? '✅ Connected' : '❌ Disconnected'}
+            </div>
+            <div>
+              <strong>Health:</strong> {socketHealthy ? '✅ Healthy' : '⚠️ Unhealthy'}
+            </div>
+            <div>
+              <strong>Real-time Stats:</strong> {realtimeStats ? '✅ Available' : '❌ None'}
+            </div>
+            <div>
+              <strong>Last Update:</strong> {statsLastUpdate ? new Date(statsLastUpdate).toLocaleString() : 'Never'}
+            </div>
+            <div>
+              <strong>Error:</strong> {socketError || 'None'}
+            </div>
+            <div>
+              <strong>Data Source:</strong> {(realtimeStats && Object.keys(realtimeStats).length > 0) ? '🔴 Socket.IO' : '🔵 REST API'}
+            </div>
           </div>
         </div>
       </div>

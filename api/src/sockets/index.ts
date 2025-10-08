@@ -5,7 +5,6 @@ import {
   UpdateDailyEntryRequest,
   CreatePaymentRequest,
   UpdateCustomerRequest,
-  ReportStats,
   CustomerBalance
 } from '@/types';
 import prisma from '@/database/client';
@@ -171,16 +170,16 @@ const getAdminRealtimeStats = async (): Promise<any> => {
 };
 
 /**
- * Get real-time statistics for dashboard
+ * Get real-time statistics for dashboard (mobile app compatible)
  */
-const getRealtimeStats = async (userId: string): Promise<Partial<ReportStats>> => {
+const getRealtimeStats = async (userId: string): Promise<any> => {
   try {
     // Get today's stats using proper date range
     const today = new Date();
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
     
-    const [todayEntries, todayPayments, customers] = await Promise.all([
+    const [todayEntries, todayPayments, customers, allEntries, allPayments] = await Promise.all([
       prisma.dailyEntry.findMany({
         where: {
           userId,
@@ -202,23 +201,64 @@ const getRealtimeStats = async (userId: string): Promise<Partial<ReportStats>> =
       }),
       prisma.customer.findMany({
         where: { userId, isActive: true }
+      }),
+      // Get all entries for balance calculation
+      prisma.dailyEntry.findMany({
+        where: { userId }
+      }),
+      // Get all payments for balance calculation  
+      prisma.payment.findMany({
+        where: { userId }
       })
     ]);
 
-    const totalLiters = todayEntries.reduce((sum, entry) => sum + Number(entry.quantity), 0);
-    const totalSales = todayEntries.reduce((sum, entry) => sum + Number(entry.amount), 0);
-    const totalCollection = todayPayments.reduce((sum, payment) => sum + Number(payment.amount), 0);
+    const todayDeliveries = todayEntries.reduce((sum, entry) => sum + Number(entry.quantity), 0);
+    const todayRevenue = todayEntries.reduce((sum, entry) => sum + Number(entry.amount), 0);
+    const todayCollection = todayPayments.reduce((sum, payment) => sum + Number(payment.amount), 0);
+
+    // Calculate total outstanding balance
+    const totalDeliveryAmount = allEntries.reduce((sum, entry) => sum + Number(entry.amount), 0);
+    const totalPaymentAmount = allPayments.reduce((sum, payment) => sum + Number(payment.amount), 0);
+    const totalBalance = totalDeliveryAmount - totalPaymentAmount;
+
+    // Calculate customers with pending payments
+    const customerBalances = new Map<string, number>();
+    
+    // Add delivery amounts
+    allEntries.forEach(entry => {
+      const current = customerBalances.get(entry.customerId) || 0;
+      customerBalances.set(entry.customerId, current + Number(entry.amount));
+    });
+    
+    // Subtract payment amounts
+    allPayments.forEach(payment => {
+      const current = customerBalances.get(payment.customerId) || 0;
+      customerBalances.set(payment.customerId, current - Number(payment.amount));
+    });
+    
+    const pendingPayments = Array.from(customerBalances.values()).filter(balance => balance > 0).length;
 
     return {
-      period: 'today',
-      totalLiters,
-      totalSales,
-      totalCollection,
-      activeCustomers: customers.length
+      totalCustomers: customers.length,
+      activeCustomers: customers.length,
+      todayDeliveries,              // Mobile compatible field name
+      todayRevenue,                 // Mobile compatible field name  
+      todayCollection,              // Today's payments collected
+      pendingPayments,              // Count of customers with dues
+      totalBalance,                 // Total outstanding amount
+      lastUpdate: new Date()
     };
   } catch (error) {
     console.error('Failed to get realtime stats:', error);
-    return {};
+    return {
+      totalCustomers: 0,
+      activeCustomers: 0,
+      todayDeliveries: 0,
+      todayRevenue: 0,
+      pendingPayments: 0,
+      totalBalance: 0,
+      lastUpdate: new Date()
+    };
   }
 };
 
@@ -252,10 +292,16 @@ export const setupSocketHandlers = (io: Server) => {
     );
 
     // Send initial real-time stats
-    const initialStats = user.userType === 'admin' 
-      ? await getAdminRealtimeStats() 
-      : await getRealtimeStats(user.id);
-    socket.emit('stats:updated', initialStats);
+    try {
+      const initialStats = user.userType === 'admin' 
+        ? await getAdminRealtimeStats() 
+        : await getRealtimeStats(user.id);
+      
+      console.log(`📊 Sending initial stats to ${user.userType} ${user.email}:`, Object.keys(initialStats));
+      socket.emit('stats:updated', initialStats);
+    } catch (error) {
+      console.error('Failed to send initial stats:', error);
+    }
 
     // Handle delivery updates
     socket.on('delivery:update', async (data: UpdateDailyEntryRequest & { id: string }) => {
@@ -411,9 +457,12 @@ export const setupSocketHandlers = (io: Server) => {
     // Handle real-time stats requests
     socket.on('stats:request', async () => {
       try {
+        console.log(`📊 Stats requested by ${user.userType} user: ${user.email}`);
         const stats = user.userType === 'admin' 
           ? await getAdminRealtimeStats() 
           : await getRealtimeStats(user.id);
+        
+        console.log(`📊 Sending stats to ${user.email}:`, Object.keys(stats));
         socket.emit('stats:updated', stats);
       } catch (error: any) {
         console.error('Stats request error:', error);
@@ -488,3 +537,8 @@ export const getActiveUsersCount = (): number => {
 export const isUserOnline = (userId: string): boolean => {
   return activeUsers.has(userId);
 };
+
+/**
+ * Export admin stats function for use in other modules
+ */
+export { getAdminRealtimeStats };

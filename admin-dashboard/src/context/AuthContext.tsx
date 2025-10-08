@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { authApi, handleApiError } from '@/lib/api';
+import { adminSocket } from '@/lib/socket';
 
 interface User {
   id: string;
@@ -47,10 +48,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (response.success) {
             setUser(response.data);
             console.log('✅ User authenticated:', response.data);
+            
+            // Initialize Socket.IO connection after successful authentication
+            setTimeout(() => {
+              console.log('🔌 Initializing Socket.IO connection...');
+              adminSocket.connect();
+            }, 500);
           } else {
             console.log('❌ Auth failed, clearing tokens');
             localStorage.removeItem('adminToken');
             localStorage.removeItem('adminUser');
+            adminSocket.disconnect();
           }
         } else {
           console.log('🔐 No token found');
@@ -85,6 +93,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSkipAuthCheck(true); // Skip the next auth check since we just logged in
         
         console.log('✅ User set in context:', userData);
+        
+        // Initialize Socket.IO connection after successful login
+        setTimeout(() => {
+          console.log('🔌 Connecting Socket.IO after login...');
+          adminSocket.reconnectWithAuth();
+        }, 1000);
       } else {
         throw new Error(response.message || 'Login failed');
       }
@@ -102,6 +116,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
+      // Disconnect Socket.IO
+      console.log('🔌 Disconnecting Socket.IO on logout...');
+      adminSocket.disconnect();
+      
       // Clear local storage regardless of API call success
       localStorage.removeItem('adminToken');
       localStorage.removeItem('adminUser');

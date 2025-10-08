@@ -1770,4 +1770,99 @@ function calculateGrowthPercentage(current: number, previous: number): number {
   return ((current - previous) / previous) * 100;
 }
 
+// TEST ROUTE - Create test payment to verify Socket.IO real-time updates
+router.post('/test-socket', async (_req, res) => {
+  try {
+    console.log('🧪 Testing Socket.IO with real payment creation...');
+    
+    // Find any active user and customer for testing
+    const user = await prisma.user.findFirst({
+      where: { isActive: true },
+      include: {
+        customers: {
+          where: { isActive: true },
+          take: 1
+        }
+      }
+    });
+
+    if (!user || !user.customers.length) {
+      const response: ApiResponse = {
+        success: false,
+        message: 'No active user or customer found for testing',
+        error: 'Need at least one active user with one customer'
+      };
+      res.status(404).json(response);
+      return;
+    }
+
+    const customer = user.customers[0];
+
+    // Create a test payment
+    const payment = await prisma.payment.create({
+      data: {
+        userId: user.id,
+        customerId: customer.id,
+        amount: 50,
+        method: 'CASH',
+        paymentDate: new Date(),
+        notes: '🧪 Test payment for Socket.IO verification'
+      },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            phone: true
+          }
+        }
+      }
+    });
+
+    // 🚀 Broadcast via Socket.IO exactly like the payment routes
+    try {
+      const { getIoInstance } = require('../lib/socket');
+      const { getAdminRealtimeStats } = require('../sockets');
+      
+      const io = getIoInstance();
+      
+      if (!io) {
+        console.warn('⚠️  Socket.IO instance not available');
+      } else {
+        // Broadcast payment to user's devices
+        io.to(`user:${user.id}`).emit('payment:added', payment);
+        console.log(`✅ Payment broadcasted to user:${user.id}`);
+        
+        // Broadcast updated stats to admin dashboard
+        const adminStats = await getAdminRealtimeStats();
+        io.emit('stats:updated', adminStats);
+        console.log('✅ Admin stats broadcasted to all connected clients');
+      }
+    } catch (socketError) {
+      console.error('❌ Failed to broadcast test payment:', socketError);
+    }
+
+    const response: ApiResponse = {
+      success: true,
+      message: 'Test payment created and broadcasted via Socket.IO',
+      data: {
+        payment,
+        user: { id: user.id, email: user.email },
+        customer: { id: customer.id, name: customer.name },
+        socketBroadcast: 'Payment and admin stats events sent'
+      }
+    };
+    
+    res.json(response);
+  } catch (error: any) {
+    console.error('Test payment error:', error);
+    const response: ApiResponse = {
+      success: false,
+      message: 'Failed to create test payment',
+      error: error.message
+    };
+    res.status(500).json(response);
+  }
+});
+
 export default router;
