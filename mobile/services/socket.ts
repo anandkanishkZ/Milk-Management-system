@@ -162,9 +162,11 @@ class UserSocketService {
         connectionStatus: 'connected'
       });
 
-      // Request initial data
-      this.emit('stats:request');
-      this.emit('activity:request', 10);
+      // Request initial data only once after connection
+      setTimeout(() => {
+        this.emit('stats:request');
+        this.emit('activity:request', 10);
+      }, 1000); // Delay to prevent rapid requests
     });
 
     this.socket.on('disconnect', (reason) => {

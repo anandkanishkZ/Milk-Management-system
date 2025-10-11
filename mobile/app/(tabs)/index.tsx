@@ -54,12 +54,13 @@ export default function HomeScreen() {
 
   console.log('🔄 Real-time stats:', realtimeStats);
 
-  // Request real-time stats on mount
+  // Request real-time stats only once when connected
   useEffect(() => {
-    if (isConnected) {
+    if (isConnected && !realtimeStats) {
+      console.log('📡 Requesting initial stats...');
       requestUpdate();
     }
-  }, [isConnected, requestUpdate]);
+  }, [isConnected]); // Remove requestUpdate dependency to prevent loops
 
   const stats = useMemo(() => {
     const activeCustomers = customers.filter((c) => c.isActive).length;

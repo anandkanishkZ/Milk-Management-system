@@ -1,69 +1,112 @@
 import { Request, Response, NextFunction } from 'express';
-import { ApiResponse } from '@/types';
+import { AppError, formatErrorResponse, isOperationalError, ErrorCode } from '@/utils/errors';
+import logger from '@/utils/logger';
 
 export const errorHandler = (
-  error: Error,
-  _req: Request,
+  error: any,
+  req: Request,
   res: Response,
   _next: NextFunction
 ): void => {
-  console.error('Error:', error);
+  // Convert unknown errors to AppError
+  let appError: AppError;
   
-  // Default error response
-  const response: ApiResponse = {
-    success: false,
-    message: 'Internal server error',
-    error: process.env['NODE_ENV'] === 'development' ? error.message : 'Something went wrong'
-  };
-  
-  // Handle specific error types
-  if (error.name === 'ValidationError') {
-    response.message = 'Validation failed';
-    response.error = error.message;
-    res.status(400).json(response);
-    return;
+  if (error instanceof AppError) {
+    appError = error;
+  } else {
+    // Handle known error types
+    appError = convertToAppError(error);
   }
-  
-  if (error.name === 'UnauthorizedError') {
-    response.message = 'Unauthorized access';
-    response.error = 'Invalid or expired token';
-    res.status(401).json(response);
-    return;
-  }
-  
-  if (error.name === 'ForbiddenError') {
-    response.message = 'Forbidden';
-    response.error = 'Insufficient permissions';
-    res.status(403).json(response);
-    return;
-  }
-  
-  if (error.name === 'NotFoundError') {
-    response.message = 'Resource not found';
-    response.error = error.message;
-    res.status(404).json(response);
-    return;
-  }
-  
+
+  // Log the error
+  logError(appError, req);
+
+  // Format and send response
+  const errorResponse = formatErrorResponse(appError, req.path);
+  res.status(appError.statusCode).json(errorResponse);
+};
+
+const convertToAppError = (error: any): AppError => {
   // Prisma errors
-  if (error.name === 'PrismaClientKnownRequestError') {
-    const prismaError = error as any;
-    
-    if (prismaError.code === 'P2002') {
-      response.message = 'Duplicate entry';
-      response.error = 'A record with this information already exists';
-      res.status(409).json(response);
-      return;
-    }
-    
-    if (prismaError.code === 'P2025') {
-      response.message = 'Record not found';
-      response.error = 'The requested record does not exist';
-      res.status(404).json(response);
-      return;
-    }
+  if (error.code === 'P2002') {
+    return new AppError(
+      'Resource already exists',
+      ErrorCode.RESOURCE_ALREADY_EXISTS,
+      409,
+      true,
+      { field: error.meta?.target }
+    );
   }
   
-  // Default 500 error
-  res.status(500).json(response);
+  if (error.code === 'P2025') {
+    return new AppError(
+      'Resource not found',
+      ErrorCode.RESOURCE_NOT_FOUND,
+      404,
+      true
+    );
+  }
+
+  // JWT errors
+  if (error.name === 'JsonWebTokenError') {
+    return new AppError(
+      'Invalid token',
+      ErrorCode.INVALID_TOKEN,
+      401,
+      true
+    );
+  }
+
+  if (error.name === 'TokenExpiredError') {
+    return new AppError(
+      'Token expired',
+      ErrorCode.TOKEN_EXPIRED,
+      401,
+      true
+    );
+  }
+
+  // Validation errors (Zod)
+  if (error.name === 'ZodError') {
+    return new AppError(
+      'Validation failed',
+      ErrorCode.VALIDATION_ERROR,
+      400,
+      true,
+      error.errors
+    );
+  }
+
+  // Default to internal server error
+  return new AppError(
+    error.message || 'An unexpected error occurred',
+    ErrorCode.INTERNAL_SERVER_ERROR,
+    500,
+    isOperationalError(error),
+    process.env['NODE_ENV'] === 'development' ? error.stack : undefined
+  );
+};
+
+const logError = (error: AppError, req: Request): void => {
+  const errorInfo = {
+    message: error.message,
+    code: error.code,
+    statusCode: error.statusCode,
+    url: req.url,
+    method: req.method,
+    userAgent: req.get('User-Agent'),
+    ip: req.ip,
+    userId: req.user?.id,
+    timestamp: new Date().toISOString(),
+    ...(error.details && { details: error.details }),
+    ...(process.env['NODE_ENV'] === 'development' && { stack: error.stack })
+  };
+
+  if (error.statusCode >= 500) {
+    logger.error('Server Error:', errorInfo);
+  } else if (error.statusCode >= 400) {
+    logger.warn('Client Error:', errorInfo);
+  } else {
+    logger.info('Error:', errorInfo);
+  }
 };

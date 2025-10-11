@@ -8,9 +8,27 @@ export interface EnvironmentConfig {
   enableLogging: boolean;
 }
 
-// Default configuration for development
+// Get configuration from Expo Constants (recommended approach)
+const getConfigFromExpo = (): EnvironmentConfig => {
+  const extra = Constants.expoConfig?.extra;
+  
+  if (!extra) {
+    console.warn('⚠️ No extra config found in app.json, using defaults');
+    return DEFAULT_CONFIG;
+  }
+
+  return {
+    apiBaseUrl: extra.apiBaseUrl || 'http://localhost:3000',
+    apiVersion: extra.apiVersion || '/api/v1',
+    apiTimeout: extra.apiTimeout || 10000,
+    environment: extra.environment || 'development',
+    enableLogging: extra.enableLogging !== false, // Default to true
+  };
+};
+
+// Default configuration for development (fallback only)
 const DEFAULT_CONFIG: EnvironmentConfig = {
-  apiBaseUrl: 'http://192.168.1.119:3000',
+  apiBaseUrl: 'http://localhost:3000',
   apiVersion: '/api/v1',
   apiTimeout: 10000,
   environment: 'development',
@@ -37,32 +55,33 @@ const STAGING_CONFIG: EnvironmentConfig = {
 
 // Get configuration based on environment
 function getEnvironmentConfig(): EnvironmentConfig {
-  const extra = Constants.expoConfig?.extra;
-  const environment = extra?.environment || 'development';
+  // Primary: Use app.json extra configuration (recommended)
+  const configFromExpo = getConfigFromExpo();
+  
+  // Validate required configuration
+  if (!configFromExpo.apiBaseUrl) {
+    console.error('❌ API Base URL not configured in app.json extra');
+    throw new Error('API configuration missing');
+  }
 
+  // Override with predefined configs if needed (legacy support)
+  const environment = configFromExpo.environment;
   let config: EnvironmentConfig;
 
   switch (environment) {
     case 'production':
-      config = PRODUCTION_CONFIG;
+      config = { ...PRODUCTION_CONFIG, ...configFromExpo };
       break;
     case 'staging':
-      config = STAGING_CONFIG;
+      config = { ...STAGING_CONFIG, ...configFromExpo };
       break;
     default:
       config = DEFAULT_CONFIG;
       break;
   }
 
-  // Override with values from app.json if available
-  return {
-    ...config,
-    apiBaseUrl: extra?.apiBaseUrl || config.apiBaseUrl,
-    apiVersion: extra?.apiVersion || config.apiVersion,
-    apiTimeout: extra?.apiTimeout || config.apiTimeout,
-    environment: extra?.environment || config.environment,
-    enableLogging: extra?.enableLogging ?? config.enableLogging,
-  };
+  // Return the configuration (already merged above)
+  return configFromExpo;
 }
 
 export const ENV = getEnvironmentConfig();

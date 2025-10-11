@@ -36,7 +36,7 @@
       "eas": {
         "projectId": "b8482488-eac1-40c7-9313-8ea2fbb92a15"
       },
-      "apiBaseUrl": "http://192.168.1.119:3000",
+      "apiBaseUrl": "http://192.168.1.19:3000",
       "apiVersion": "/api/v1",
       "apiTimeout": 10000,
       "environment": "development",

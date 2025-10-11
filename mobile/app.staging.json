@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "Milk Delivery Manager (Dev)",
-    "slug": "milk-delivery-manager-dev",
+    "name": "Milk Delivery Manager (Staging)",
+    "slug": "milk-delivery-manager-staging",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "milkdelivery-dev",
+    "scheme": "milkdelivery-staging",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "android": {
-      "package": "com.dhudhwala.milkdelivery.dev",
+      "package": "com.dhudhwala.milkdelivery.staging",
       "versionCode": 1,
       "compileSdkVersion": 34,
       "targetSdkVersion": 34,
@@ -17,7 +17,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.dhudhwala.milkdelivery.dev"
+      "bundleIdentifier": "com.dhudhwala.milkdelivery.staging"
     },
     "web": {
       "bundler": "metro",
@@ -36,10 +36,10 @@
       "eas": {
         "projectId": "b8482488-eac1-40c7-9313-8ea2fbb92a15"
       },
-      "apiBaseUrl": "http://192.168.1.19:3000",
+      "apiBaseUrl": "https://staging-api.your-domain.com",
       "apiVersion": "/api/v1",
-      "apiTimeout": 10000,
-      "environment": "development",
+      "apiTimeout": 12000,
+      "environment": "staging",
       "enableLogging": true
     }
   }

@@ -131,7 +131,7 @@ A comprehensive milk delivery management system built with React Native (Expo) a
    
    Update with your API endpoint:
    ```env
-   EXPO_PUBLIC_API_URL=http://192.168.1.119:3000
+   EXPO_PUBLIC_API_URL=http://192.168.1.19:3000
    ```
 
 4. **Start Expo Development Server**

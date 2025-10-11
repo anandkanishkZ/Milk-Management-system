@@ -10,13 +10,115 @@ import {
 import prisma from '@/database/client';
 import jwt from 'jsonwebtoken';
 import config from '@/config';
+import { SocketError, ErrorCode } from '@/utils/errors';
 
 interface AuthenticatedSocket extends Socket {
   user?: AuthUser;
 }
 
-// In-memory store for active user sessions
-const activeUsers = new Map<string, string>(); // userId -> socketId
+// Enhanced in-memory store for active user sessions with cleanup
+class ActiveUserManager {
+  private activeUsers = new Map<string, {
+    socketId: string;
+    userId: string;
+    connectedAt: Date;
+    lastActivity: Date;
+    userType: 'user' | 'admin';
+  }>();
+  
+  private cleanupInterval: NodeJS.Timeout;
+  private readonly INACTIVE_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+
+  constructor() {
+    // Run cleanup every 5 minutes
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupInactiveUsers();
+    }, 5 * 60 * 1000);
+  }
+
+  addUser(socketId: string, userId: string, userType: 'user' | 'admin'): void {
+    // Remove any existing entry for this user
+    this.removeUserById(userId);
+    
+    this.activeUsers.set(socketId, {
+      socketId,
+      userId,
+      connectedAt: new Date(),
+      lastActivity: new Date(),
+      userType
+    });
+  }
+
+  removeUser(socketId: string): void {
+    this.activeUsers.delete(socketId);
+  }
+
+  removeUserById(userId: string): void {
+    for (const [socketId, userData] of this.activeUsers.entries()) {
+      if (userData.userId === userId) {
+        this.activeUsers.delete(socketId);
+        break;
+      }
+    }
+  }
+
+  updateActivity(socketId: string): void {
+    const userData = this.activeUsers.get(socketId);
+    if (userData) {
+      userData.lastActivity = new Date();
+    }
+  }
+
+  getUserBySocketId(socketId: string) {
+    return this.activeUsers.get(socketId);
+  }
+
+  getUserByUserId(userId: string) {
+    for (const userData of this.activeUsers.values()) {
+      if (userData.userId === userId) {
+        return userData;
+      }
+    }
+    return null;
+  }
+
+  getActiveUserCount(): number {
+    return this.activeUsers.size;
+  }
+
+  getActiveUsers(): Array<{ userId: string; socketId: string; connectedAt: Date; lastActivity: Date; userType: string }> {
+    return Array.from(this.activeUsers.values());
+  }
+
+  private cleanupInactiveUsers(): void {
+    const now = new Date();
+    const inactiveUsers: string[] = [];
+
+    for (const [socketId, userData] of this.activeUsers.entries()) {
+      if (now.getTime() - userData.lastActivity.getTime() > this.INACTIVE_TIMEOUT) {
+        inactiveUsers.push(socketId);
+      }
+    }
+
+    inactiveUsers.forEach(socketId => {
+      console.log('🧹 Cleaning up inactive user:', socketId);
+      this.activeUsers.delete(socketId);
+    });
+
+    if (inactiveUsers.length > 0) {
+      console.log(`🧹 Cleaned up ${inactiveUsers.length} inactive users. Active users: ${this.activeUsers.size}`);
+    }
+  }
+
+  destroy(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
+    this.activeUsers.clear();
+  }
+}
+
+const activeUserManager = new ActiveUserManager();
 
 /**
  * Socket authentication middleware
@@ -278,7 +380,7 @@ export const setupSocketHandlers = (io: Server) => {
     console.log(`👤 User ${user.name || user.email} connected (${socket.id})`);
 
     // Store active user session
-    activeUsers.set(user.id, socket.id);
+    activeUserManager.addUser(socket.id, user.id, user.userType || 'user');
 
     // Join user-specific room for private updates
     socket.join(`user:${user.id}`);
@@ -306,6 +408,8 @@ export const setupSocketHandlers = (io: Server) => {
     // Handle delivery updates
     socket.on('delivery:update', async (data: UpdateDailyEntryRequest & { id: string }) => {
       try {
+        // Update user activity
+        activeUserManager.updateActivity(socket.id);
         const { id, ...updateData } = data;
 
         // Update delivery entry
@@ -352,14 +456,25 @@ export const setupSocketHandlers = (io: Server) => {
         console.log(`� Delivery updated for user ${user.email}: ${updatedEntry.customer?.name}`);
 
       } catch (error: any) {
-        console.error('Delivery update error:', error);
-        socket.emit('error', { message: 'Failed to update delivery', code: 'DELIVERY_UPDATE_ERROR' });
+        const socketError = new SocketError(
+          'Failed to update delivery',
+          ErrorCode.DELIVERY_UPDATE_ERROR,
+          { originalError: error.message, data }
+        );
+        console.error('Delivery update error:', socketError);
+        socket.emit('error', { 
+          message: socketError.message, 
+          code: socketError.code,
+          details: socketError.details 
+        });
       }
     });
 
     // Handle payment additions
     socket.on('payment:add', async (data: CreatePaymentRequest) => {
       try {
+        // Update user activity
+        activeUserManager.updateActivity(socket.id);
         // Create payment
         const payment = await prisma.payment.create({
           data: {
@@ -415,8 +530,17 @@ export const setupSocketHandlers = (io: Server) => {
         console.log(`💰 Payment added for user ${user.email}: ${payment.customer?.name} - ₹${payment.amount}`);
 
       } catch (error: any) {
-        console.error('Payment addition error:', error);
-        socket.emit('error', { message: 'Failed to add payment', code: 'PAYMENT_ADD_ERROR' });
+        const socketError = new SocketError(
+          'Failed to add payment',
+          ErrorCode.PAYMENT_ADD_ERROR,
+          { originalError: error.message, data }
+        );
+        console.error('Payment addition error:', socketError);
+        socket.emit('error', { 
+          message: socketError.message, 
+          code: socketError.code,
+          details: socketError.details 
+        });
       }
     });
 
@@ -454,9 +578,19 @@ export const setupSocketHandlers = (io: Server) => {
       }
     });
 
-    // Handle real-time stats requests
+    // Handle real-time stats requests with rate limiting
+    let lastStatsRequest = 0;
     socket.on('stats:request', async () => {
+      const now = Date.now();
+      
+      // Rate limit: max 1 stats request per 3 seconds per user
+      if (now - lastStatsRequest < 3000) {
+        console.log(`⏰ Stats request throttled for ${user.email} (too frequent)`);
+        return;
+      }
+      
       try {
+        lastStatsRequest = now;
         console.log(`📊 Stats requested by ${user.userType} user: ${user.email}`);
         const stats = user.userType === 'admin' 
           ? await getAdminRealtimeStats() 
@@ -488,6 +622,8 @@ export const setupSocketHandlers = (io: Server) => {
 
     // Handle ping for connection health
     socket.on('ping', () => {
+      // Update user activity
+      activeUserManager.updateActivity(socket.id);
       socket.emit('pong');
     });
 
@@ -496,7 +632,7 @@ export const setupSocketHandlers = (io: Server) => {
       console.log(`👤 User ${user.name || user.email} disconnected (${socket.id}): ${reason}`);
       
       // Remove from active users
-      activeUsers.delete(user.id);
+      activeUserManager.removeUser(socket.id);
 
       // Log disconnection activity
       await logUserActivity(
@@ -528,14 +664,21 @@ export const setupSocketHandlers = (io: Server) => {
  * Get active users count
  */
 export const getActiveUsersCount = (): number => {
-  return activeUsers.size;
+  return activeUserManager.getActiveUserCount();
 };
 
 /**
  * Check if user is online
  */
 export const isUserOnline = (userId: string): boolean => {
-  return activeUsers.has(userId);
+  return activeUserManager.getUserByUserId(userId) !== null;
+};
+
+/**
+ * Cleanup socket resources (call on app shutdown)
+ */
+export const cleanupSocketResources = (): void => {
+  activeUserManager.destroy();
 };
 
 /**

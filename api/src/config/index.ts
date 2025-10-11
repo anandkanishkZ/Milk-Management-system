@@ -79,27 +79,70 @@ if (missingEnvVars.length > 0) {
   throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
 }
 
+// Helper function to get environment-specific defaults
+const getDefaultOrigins = (nodeEnv: string): string[] => {
+  switch (nodeEnv) {
+    case 'production':
+      return [
+        'https://your-production-domain.com',
+        'https://admin.your-domain.com'
+      ];
+    case 'staging':
+      return [
+        'https://staging.your-domain.com',
+        'https://admin-staging.your-domain.com'
+      ];
+    default: // development
+      return [
+        'http://localhost:8081',
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'exp://localhost:8081'
+      ];
+  }
+};
+
+// Helper function to get rate limit based on environment
+const getRateLimit = (nodeEnv: string) => {
+  switch (nodeEnv) {
+    case 'production':
+      return {
+        windowMs: parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '900000', 10), // 15 minutes
+        maxRequests: parseInt(process.env['RATE_LIMIT_MAX_REQUESTS'] || '60', 10), // Stricter in production
+      };
+    case 'staging':
+      return {
+        windowMs: parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '900000', 10),
+        maxRequests: parseInt(process.env['RATE_LIMIT_MAX_REQUESTS'] || '80', 10),
+      };
+    default: // development
+      return {
+        windowMs: parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '900000', 10),
+        maxRequests: parseInt(process.env['RATE_LIMIT_MAX_REQUESTS'] || '200', 10), // More lenient in dev
+      };
+  }
+};
+
+const nodeEnv = process.env['NODE_ENV'] || 'development';
+
 const config: Config = {
   port: parseInt(process.env['PORT'] || '3000', 10),
-  nodeEnv: process.env['NODE_ENV'] || 'development',
+  nodeEnv,
   apiPrefix: process.env['API_PREFIX'] || '/api/v1',
   
   databaseUrl: process.env['DATABASE_URL']!,
   
   jwtSecret: process.env['JWT_SECRET']!,
-  jwtExpiresIn: process.env['JWT_EXPIRES_IN'] || '1h', // Increased from 15m to 1h
+  jwtExpiresIn: process.env['JWT_EXPIRES_IN'] || '1h',
   jwtRefreshSecret: process.env['JWT_REFRESH_SECRET']!,
-  jwtRefreshExpiresIn: process.env['JWT_REFRESH_EXPIRES_IN'] || '90d', // Increased from 7d to 90d (3 months)
+  jwtRefreshExpiresIn: process.env['JWT_REFRESH_EXPIRES_IN'] || '90d',
   
-  allowedOrigins: process.env['ALLOWED_ORIGINS']?.split(',') || ['http://localhost:8081'],
+  allowedOrigins: process.env['ALLOWED_ORIGINS']?.split(',').map(origin => origin.trim()) || getDefaultOrigins(nodeEnv),
   
-  rateLimit: {
-    windowMs: parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '900000', 10), // 15 minutes
-    maxRequests: parseInt(process.env['RATE_LIMIT_MAX_REQUESTS'] || '100', 10),
-  },
+  rateLimit: getRateLimit(nodeEnv),
   
   socket: {
-    corsOrigins: process.env['SOCKET_CORS_ORIGINS']?.split(',') || ['http://localhost:8081'],
+    corsOrigins: process.env['SOCKET_CORS_ORIGINS']?.split(',').map(origin => origin.trim()) || getDefaultOrigins(nodeEnv),
   },
   
   logging: {

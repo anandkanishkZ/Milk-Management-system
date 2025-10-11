@@ -87,21 +87,35 @@ export const useSocketEvent = (event: string, callback: (data: any) => void) => 
 export const useRealtimeStats = () => {
   const [stats, setStats] = useState<RealtimeStats | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const lastRequestRef = useRef<number>(0);
 
   useSocketEvent('stats:updated', (newStats) => {
     setStats(newStats);
     setLastUpdate(new Date());
   });
 
-  // Request initial stats
+  // Request initial stats only once
   useEffect(() => {
-    userSocket.requestStats();
+    const now = Date.now();
+    if (now - lastRequestRef.current > 5000) { // Throttle to max 1 request per 5 seconds
+      lastRequestRef.current = now;
+      userSocket.requestStats();
+    }
+  }, []);
+
+  // Throttled request update function
+  const requestUpdate = useCallback(() => {
+    const now = Date.now();
+    if (now - lastRequestRef.current > 5000) { // Throttle to max 1 request per 5 seconds
+      lastRequestRef.current = now;
+      userSocket.requestStats();
+    }
   }, []);
 
   return {
     stats,
     lastUpdate,
-    requestUpdate: () => userSocket.requestStats(),
+    requestUpdate,
   };
 };
 

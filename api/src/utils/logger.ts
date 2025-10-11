@@ -93,61 +93,117 @@ if (config.nodeEnv !== 'production') {
   );
 }
 
-// Utility functions for structured logging
-export const logActivity = (userId: string, action: string, details?: any) => {
+// Enhanced utility functions for structured logging
+export interface LogContext {
+  userId?: string;
+  sessionId?: string;
+  requestId?: string;
+  ip?: string;
+  userAgent?: string;
+  correlationId?: string;
+}
+
+export const logActivity = (userId: string, action: string, details?: any, context?: LogContext) => {
   logger.info('User Activity', {
+    category: 'activity',
     userId,
     action,
     details,
+    ...context,
     timestamp: new Date().toISOString()
   });
 };
 
-export const logError = (error: Error, context?: any) => {
+export const logError = (error: Error, context?: LogContext & { operation?: string }) => {
   logger.error('Application Error', {
+    category: 'error',
     message: error.message,
     stack: error.stack,
-    context,
+    name: error.name,
+    ...context,
     timestamp: new Date().toISOString()
   });
 };
 
-export const logRequest = (method: string, url: string, userId?: string, duration?: number) => {
-  logger.info('HTTP Request', {
+export const logRequest = (method: string, url: string, statusCode: number, duration?: number, context?: LogContext) => {
+  const level = statusCode >= 400 ? 'warn' : 'info';
+  logger.log(level, 'HTTP Request', {
+    category: 'http',
     method,
     url,
-    userId,
-    duration,
+    statusCode,
+    duration: duration ? `${duration}ms` : undefined,
+    ...context,
     timestamp: new Date().toISOString()
   });
 };
 
-export const logAuth = (event: string, userId?: string, email?: string, success?: boolean) => {
-  logger.info('Authentication Event', {
+export const logAuth = (event: string, success: boolean, context?: LogContext & { email?: string; reason?: string }) => {
+  const level = success ? 'info' : 'warn';
+  logger.log(level, 'Authentication Event', {
+    category: 'auth',
     event,
-    userId,
-    email,
     success,
+    ...context,
     timestamp: new Date().toISOString()
   });
 };
 
-export const logDatabase = (operation: string, table: string, userId?: string, error?: string) => {
-  const level = error ? 'error' : 'debug';
+export const logDatabase = (operation: string, table: string, success: boolean, context?: LogContext & { error?: string; duration?: number }) => {
+  const level = success ? 'debug' : 'error';
   logger.log(level, 'Database Operation', {
+    category: 'database',
     operation,
     table,
-    userId,
-    error,
+    success,
+    duration: context?.duration ? `${context.duration}ms` : undefined,
+    error: context?.error,
+    userId: context?.userId,
     timestamp: new Date().toISOString()
   });
 };
 
-export const logSocket = (event: string, userId?: string, data?: any) => {
-  logger.debug('Socket Event', {
+export const logSocket = (event: string, success: boolean, context?: LogContext & { data?: any; error?: string }) => {
+  const level = success ? 'debug' : 'warn';
+  logger.log(level, 'Socket Event', {
+    category: 'socket',
     event,
-    userId,
-    data: data ? JSON.stringify(data) : undefined,
+    success,
+    userId: context?.userId,
+    data: context?.data ? JSON.stringify(context.data) : undefined,
+    error: context?.error,
+    timestamp: new Date().toISOString()
+  });
+};
+
+export const logSecurity = (event: string, severity: 'low' | 'medium' | 'high', context?: LogContext & { details?: any }) => {
+  const level = severity === 'high' ? 'error' : severity === 'medium' ? 'warn' : 'info';
+  logger.log(level, 'Security Event', {
+    category: 'security',
+    event,
+    severity,
+    ...context,
+    timestamp: new Date().toISOString()
+  });
+};
+
+export const logPerformance = (operation: string, duration: number, context?: LogContext & { details?: any }) => {
+  const level = duration > 5000 ? 'warn' : duration > 1000 ? 'info' : 'debug';
+  logger.log(level, 'Performance Metric', {
+    category: 'performance',
+    operation,
+    duration: `${duration}ms`,
+    slow: duration > 1000,
+    ...context,
+    timestamp: new Date().toISOString()
+  });
+};
+
+export const logBusiness = (event: string, context?: LogContext & { details?: any }) => {
+  logger.info('Business Event', {
+    category: 'business',
+    event,
+    ...context,
     timestamp: new Date().toISOString()
   });
 };

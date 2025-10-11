@@ -5,6 +5,22 @@ const prisma = new PrismaClient();
 
 async function main() {
   console.log('🌱 Starting database seeding...');
+  
+  // Clear existing data first (in correct order due to foreign keys)
+  console.log('🧹 Cleaning existing data...');
+  await prisma.activityLog.deleteMany();
+  await prisma.payment.deleteMany();
+  await prisma.dailyEntry.deleteMany();
+  await prisma.customer.deleteMany();
+  await prisma.refreshToken.deleteMany();
+  await prisma.securityPin.deleteMany();
+  await prisma.user.deleteMany();
+  await prisma.adminAction.deleteMany();
+  await prisma.adminUser.deleteMany();
+  await prisma.systemMetric.deleteMany();
+  await prisma.report.deleteMany();
+  
+  console.log('✅ Existing data cleared');
 
   // Create admin user
   const adminPassword = await bcrypt.hash('admin123', 12);

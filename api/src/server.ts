@@ -157,6 +157,11 @@ const gracefulShutdown = async (signal: string) => {
     console.log('🔌 Socket.io server closed');
   });
   
+  // Cleanup socket resources
+  const { cleanupSocketResources } = await import('./sockets/index.js');
+  cleanupSocketResources();
+  console.log('🧹 Socket resources cleaned up');
+  
   // Close database connection
   await prisma.$disconnect();
   console.log('🗄️ Database disconnected');
@@ -178,7 +183,7 @@ const startServer = async () => {
       console.log(`🚀 Server running on port ${config.port}`);
       console.log(`🌍 Environment: ${config.nodeEnv}`);
       console.log(`📡 API available at: http://localhost:${config.port}${config.apiPrefix}`);
-      console.log(`📱 Mobile API available at: http://192.168.1.119:${config.port}${config.apiPrefix}`);
+      console.log(`📱 Mobile API available at: http://192.168.1.19:${config.port}${config.apiPrefix}`);
       console.log(`🔌 Socket.io server ready`);
     });
   } catch (error) {
